@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Voir lucd.legtux.org/logiciels/scripts/tatooine_mesher
+Voir http://wikicnr/w/Scripts:Mailleur_Tatooine
 
-(abscisse LineString et ... donnent le même calcul...)
+(Abscisse LineString et ... donnent le même calcul...)
 
 Repris de : J:\DI-Affaires-2014\I.00846.001 - Endiguement chambéry\4- déroulement d'affaire\4-3 mission\5. Hydraulique\01-Domaine&topo\lit_mineur\_scripts avec l'exemple de la Leysse amont
 """
@@ -10,11 +10,11 @@ Repris de : J:\DI-Affaires-2014\I.00846.001 - Endiguement chambéry\4- déroulem
 # Compatibility with Python2
 from __future__ import print_function
 
-from copy import deepcopy
+from jinja2 import Environment, Template, FileSystemLoader
 from math import ceil
 import numpy as np
-from scipy.interpolate import interp1d
-from shapely.geometry import LineString, Point
+import os.path
+from shapely.geometry import Point
 import sys
 import time
 import triangle
@@ -22,6 +22,10 @@ import triangle
 import base
 from arg_command_line import myargparse
 
+
+# For LandXML export
+env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')))
+template = env.get_template("LandXML_template.xml")
 
 # PARAMETRES
 DIGITS = 4
@@ -50,7 +54,6 @@ parser.add_argument("outfile_limites", help="limites en csv")
 parser.add_argument("outfile_profils", help="profils en csv")
 
 args = parser.parse_args()
-
 
 # class args:
 #     pass
@@ -259,35 +262,47 @@ print("Génération d'un maillage avec {} noeuds et {} éléments".format(nnode,
 
 print("~> Ecriture du maillage")
 
-with open(args.outfile_mesh, 'w', newline='') as fileout:
-    # Écriture en-tête
-    date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    fileout.write("""#########################################################################
-:FileType t3s  ASCII  EnSim 1.0
-# Canadian Hydraulics Centre/National Research Council (c) 1998-2012
-# DataType                 2D T3 Scalar Mesh
-#
-:Application              BlueKenue
-:Version                  3.3.4
-:WrittenBy                scripts_LDN
-:CreationDate             {}
-#
-#------------------------------------------------------------------------
-#
-:NodeCount {}
-:ElementCount {}
-:ElementType  T3
-#
-:EndHeader
-""".format(date, nnode, nelem))
+out_extension = args.outfile_mesh[-4:]
+if out_extension == ".i2s":
+    with open(args.outfile_mesh, 'w', newline='') as fileout:
+        # Écriture en-tête
+        date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+        fileout.write("""#########################################################################
+    :FileType t3s  ASCII  EnSim 1.0
+    # Canadian Hydraulics Centre/National Research Council (c) 1998-2012
+    # DataType                 2D T3 Scalar Mesh
+    #
+    :Application              BlueKenue
+    :Version                  3.3.4
+    :WrittenBy                scripts_LDN
+    :CreationDate             {}
+    #
+    #------------------------------------------------------------------------
+    #
+    :NodeCount {}
+    :ElementCount {}
+    :ElementType  T3
+    #
+    :EndHeader
+    """.format(date, nnode, nelem))
 
-with open(args.outfile_mesh, mode='ab') as fileout:
-    # Tableau des coordonnées (x, y, z)
-    np.savetxt(fileout, np.column_stack((t['vertices'], mesh_constr.points['Z'])), delimiter=' ', fmt='%.{}f'.format(DIGITS))
+    with open(args.outfile_mesh, mode='ab') as fileout:
+        # Tableau des coordonnées (x, y, z)
+        np.savetxt(fileout, np.column_stack((t['vertices'], mesh_constr.points['Z'])), delimiter=' ', fmt='%.{}f'.format(DIGITS))
 
-    # Tableau des éléments (connectivité)
-    np.savetxt(fileout, t['triangles']+1, delimiter=' ', fmt='%i')
+        # Tableau des éléments (connectivité)
+        np.savetxt(fileout, t['triangles']+1, delimiter=' ', fmt='%i')
 
+elif out_extension == ".xml":
+
+    template_render = template.render(
+        nodes=np.round(np.column_stack((t['vertices'], mesh_constr.points['Z'])), DIGITS),
+        ikle=t['triangles']+1
+    )
+
+    # Ecriture du fichier XML
+    with open(args.outfile_mesh, 'w') as fileout:
+        fileout.write(template_render)
 
 t2 = time.clock()
 print("=> le temps d'execution est de : {}s".format(t2-t1))
