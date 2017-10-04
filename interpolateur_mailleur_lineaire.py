@@ -263,28 +263,28 @@ print("Génération d'un maillage avec {} noeuds et {} éléments".format(nnode,
 print("~> Ecriture du maillage")
 
 out_extension = args.outfile_mesh[-4:]
-if out_extension == ".i2s":
+if out_extension == ".t3s":
     with open(args.outfile_mesh, 'w', newline='') as fileout:
         # Écriture en-tête
         date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
         fileout.write("""#########################################################################
-    :FileType t3s  ASCII  EnSim 1.0
-    # Canadian Hydraulics Centre/National Research Council (c) 1998-2012
-    # DataType                 2D T3 Scalar Mesh
-    #
-    :Application              BlueKenue
-    :Version                  3.3.4
-    :WrittenBy                scripts_LDN
-    :CreationDate             {}
-    #
-    #------------------------------------------------------------------------
-    #
-    :NodeCount {}
-    :ElementCount {}
-    :ElementType  T3
-    #
-    :EndHeader
-    """.format(date, nnode, nelem))
+:FileType t3s  ASCII  EnSim 1.0
+# Canadian Hydraulics Centre/National Research Council (c) 1998-2012
+# DataType                 2D T3 Scalar Mesh
+#
+:Application              BlueKenue
+:Version                  3.3.4
+:WrittenBy                scripts_LDN
+:CreationDate             {}
+#
+#------------------------------------------------------------------------
+#
+:NodeCount {}
+:ElementCount {}
+:ElementType  T3
+#
+:EndHeader
+""".format(date, nnode, nelem))
 
     with open(args.outfile_mesh, mode='ab') as fileout:
         # Tableau des coordonnées (x, y, z)

@@ -509,8 +509,9 @@ class SuiteProfilsTravers:
                 if isinstance(intersection, Point):
                     profil.dist_proj_axe = axe_geom.project(intersection)
                 else:
-                    sys.exit("L'intersection entre le '{}' et l'axe hydrauique n'est pas un point unique".format(profil))
+                    sys.exit("L'intersection entre le '{}' et l'axe hydraulique n'est pas un point unique".format(profil))
             else:
+                print(list(profil.geom.coords))
                 sys.exit("ERREUR: Le '{}' n'intersection pas l'axe".format(profil))
 
     # def concat(self, other)
