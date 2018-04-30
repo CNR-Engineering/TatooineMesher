@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Voir http://wikicnr/w/Scripts:Mailleur_Tatooine
 
 (Abscisse LineString et ... donnent le même calcul...)
 
@@ -10,7 +9,7 @@ Repris de : J:\DI-Affaires-2014\I.00846.001 - Endiguement chambéry\4- déroulem
 # Compatibility with Python2
 from __future__ import print_function
 
-from jinja2 import Environment, Template, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader
 from math import ceil
 import numpy as np
 import os.path
@@ -19,19 +18,16 @@ import sys
 import time
 import triangle
 
-import base
-from arg_command_line import myargparse
+from core.arg_command_line import MyArgParse
+from core.base import SuiteProfilsTravers, LigneContrainte, Lit, MeshConstructor
+from core.utils import get_axe_hydraulique
 
-
-# For LandXML export
-env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')))
-template = env.get_template("LandXML_template.xml")
 
 # PARAMETRES
 DIGITS = 4
 sep = ';'
 
-parser = myargparse(description=__doc__)
+parser = MyArgParse(description=__doc__)
 # Input
 parser.add_argument("infile_axe", help="fichier d'entrée i2s de l'axe hydraulique")
 parser.add_argument("infile_profils_travers", help="fichier d'entrée i3s de profils en travers")
@@ -76,9 +72,9 @@ t1 = time.clock()
 print("~> Lecture des fichiers d'entrées")
 
 # Parcours des fichiers d'entrée
-axe = base.get_axe_hydraulique(args.infile_axe)
-profils_travers_ori = base.SuiteProfilsTravers(args.infile_profils_travers, "Profils en travers", value_as_id=True)
-lignes_contraintes = base.LigneContrainte.get_lines_from_i2s(args.infile_lignes_contraintes)
+axe = get_axe_hydraulique(args.infile_axe)
+profils_travers_ori = SuiteProfilsTravers(args.infile_profils_travers, "Profils en travers", value_as_id=True)
+lignes_contraintes = LigneContrainte.get_lines_from_i2s(args.infile_lignes_contraintes)
 
 if args.infile_epis is not None and args.dist_corr_epi is not None:
     has_epi = True
@@ -86,7 +82,7 @@ else:
     has_epi = False
 
 if has_epi:
-    epis_ori = base.SuiteProfilsTravers(args.infile_epis, "Épi", value_as_id=True)
+    epis_ori = SuiteProfilsTravers(args.infile_epis, "Épi", value_as_id=True)
 
 print("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
 profils_travers_ori.calculer_dist_proj_axe(axe)
@@ -103,7 +99,7 @@ print("~> Classement des profils (et épis) le long de l'axe hydraulique")
 profils_travers.calculer_dist_proj_axe(axe)
 profils_travers = sorted(profils_travers, key=lambda x: x.dist_proj_axe)
 
-mesh_constr = base.MeshConstructor()
+mesh_constr = MeshConstructor()
 
 print("~> Interpolation sur les profils existants en prenant en compte le passage des lignes de contraintes")
 for i in range(len(profils_travers)):
@@ -111,13 +107,13 @@ for i in range(len(profils_travers)):
     print(cur_profil)
 
     # Recherche des limites communes "amont"
-    if i==0:
+    if i == 0:
         common_limites_id_1 = cur_profil.limites.index
     else:
         common_limites_id_1 = cur_profil.common_limits(profils_travers[i-1])
 
     # Recherche des limites communes "aval"
-    if i==len(profils_travers)-1:
+    if i == len(profils_travers)-1:
         common_limites_id_2 = cur_profil.limites.index
     else:
         common_limites_id_2 = cur_profil.common_limits(profils_travers[i+1])
@@ -205,7 +201,7 @@ for i, (prev_profil, next_profil) in enumerate(zip(profils_travers, profils_trav
                 P1 = Point(tuple(L1_coord_int[j]))
                 P2 = Point(tuple(L2_coord_int[j]))
 
-                lit_int = base.Lit(lit_1.interp_inter_lineaire(lit_2, Xp, ceil(P1.distance(P2)/args.pas_trans)+1), ['Xt', 'xt'])
+                lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp, ceil(P1.distance(P2)/args.pas_trans)+1), ['Xt', 'xt'])
                 lit_int.move_between_targets(P1, P2)
                 coord_int = lit_int.array[['X', 'Y', 'Z']]
                 pt_list_L1.append(mesh_constr.i_pt+1)
@@ -294,7 +290,8 @@ if out_extension == ".t3s":
         np.savetxt(fileout, t['triangles']+1, delimiter=' ', fmt='%i')
 
 elif out_extension == ".xml":
-
+    env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')))
+    template = env.get_template("LandXML_template.xml")
     template_render = template.render(
         nodes=np.round(np.column_stack((t['vertices'], mesh_constr.points['Z'])), DIGITS),
         ikle=t['triangles']+1

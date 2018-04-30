@@ -17,50 +17,13 @@ from math import ceil
 import numpy as np
 from numpy.lib.recfunctions import append_fields
 import pandas as pd
+from pyteltools.geom import BlueKenue as bk
 from shapely.geometry import LineString, Point
 import sys
 
-from pyteltools.geom import BlueKenue as bk
+from .utils import get_intersections, float_vars, strictly_increasing
 
 
-# FUNCTIONS
-def get_intersections(linestrings):
-    """
-    @brief: Chercher les intersections entre toutes les lignes
-    @param linestrings <[LineString]>
-    """
-    intersections = []
-    for i, l1 in enumerate(linestrings):
-        for j, l2 in enumerate(linestrings[i+1:]):
-            if l1.intersects(l2):
-                intersections.append((i, j+i+1))
-    return intersections
-
-
-def float_vars(varname_list):
-    return [(label, np.float) for label in varname_list]
-
-
-def strictly_increasing(array):
-    """
-    @brief: Check if array is sorted
-    @param array <1D-array float>: array to check
-    """
-    return all(x < y for x, y in zip(array, array[1:]))
-
-
-def get_axe_hydraulique(infile_axe):
-    """Extraction de l'unique ligne du fichier i2s d'entrée"""
-    with bk.Read(infile_axe) as in_i2s:
-        in_i2s.read_header()
-        lines = [line.polyline() for line in in_i2s.get_open_polylines()]
-    nb_lines = len(lines)
-    if nb_lines != 1:
-        sys.exit("Le fichier '{}' contient {} polylignes au lieu d'une seule pour définir l'axe hydraulique".format(infile_axe, nb_lines))
-    return lines[0]
-
-
-# CLASSES
 class Coord:
     """
     Coord: ensemble de points 2D/3D consécutifs (ex: polylignes)
@@ -482,12 +445,11 @@ class LigneContrainte:
 
     def coord_sampling_along_line(self, Xp1, Xp2, Xp_adm_int):
         """
-        Extraire les coordonnées des points interpolés le long de la ligne entre les deux abscisses
-        Xp_adm_int <1D-array>: répartition des points entre Xp1 et Xp2 (valeurs de 0 à 1, avec un parcours de Xp1 à Xp2)
-        Xp1, Xp2 <float>: abscisses de début et de fin
+        @brief: Extraire les coordonnées des points interpolés le long de la ligne entre les deux abscisses
+        @param: Xp_adm_int <1D-array>: répartition des points entre Xp1 et Xp2 (valeurs de 0 à 1, avec un parcours de Xp1 à Xp2)
+        @param: Xp1 <float>: abscisse de début
+        @param: Xp2 <float>: abscisse de fin
         """
-        nb_pts_long = len(Xp_adm_int)
-
         # Construction de la liste des abscisses cibles (en mètres)
         Xp = (1 - Xp_adm_int)*Xp1 + Xp_adm_int*Xp2
 

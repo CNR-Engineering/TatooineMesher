@@ -10,13 +10,13 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescri
     pass
 
 
-class myargparse(argparse.ArgumentParser):
+class MyArgParse(argparse.ArgumentParser):
     """
     force and verbose are optional arguments
     """
     def __init__(self, add_args=[], *args, **kwargs):
         kwargs['formatter_class'] = CustomFormatter
-        super(myargparse, self).__init__(*args, **kwargs)
+        super(MyArgParse, self).__init__(*args, **kwargs)
 
         for arg in add_args:
             if arg == 'force':
