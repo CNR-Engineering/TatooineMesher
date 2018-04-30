@@ -3,7 +3,7 @@ Mailleur Tatooine
 
 Interpolateur/mailleur à partir de profils en travers et de lignes de contraintes
 
-Langage : Python (version 3, portabilité vers la version 2 non testée)
+Langage : Python 3
 
 ## Description
 
@@ -16,13 +16,13 @@ Langage : Python (version 3, portabilité vers la version 2 non testée)
 
 ## Pré-requis
 
-* fichier de **profils en travers en i3s** :
+* fichier de **profils en travers en i3s/shp** :
     * les profils ne sont pas nécessairement ordonnées, c'est l'axe hydraulique qui permet de les ré-ordonner
     * tous les profils sont décrits dans le même sens (rive gauche à droite ou inversement)
-* fichier de **lignes de contraintes en i2s** :
+* fichier de **lignes de contraintes en i2s/shp** :
     * les lignes de contraintes ne se croissent pas
     * les lignes sont toutes orientées dans le même sens que l'axe hydraulique
-* fichier **axe hydraulique en i2s** :
+* fichier **axe hydraulique en i2s/shp** :
     * une seule polyligne orientée de l'amont vers l'aval
     * elle intersecte tous les profils (et les épis)
     * (l'axe hydraulique n'est pas considéré comme une ligne de contrainte et peut donc intersecter des lignes de contrainte)

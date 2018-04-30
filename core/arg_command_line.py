@@ -25,3 +25,13 @@ class MyArgParse(argparse.ArgumentParser):
                 self.add_argument("--verbose", "-v", help="increase output verbosity", action="store_true")
             else:
                 sys.exit("Argument inconnu: '{}'".format(arg))
+
+    def add_common_args(self):
+        self.add_argument("infile_axe", help="fichier d'entrée i2s/shp de l'axe hydraulique")
+        self.add_argument("infile_profils_travers", help="fichier d'entrée i3s/shp de profils en travers")
+        self.add_argument("infile_lignes_contraintes", help="fichier d'entrée i2s/shp de lignes de contrainte")
+        self.add_argument("--attr_profils_travers", help="attribut pour identifier les profils en travers")
+        self.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal en m.", default=5)
+        self.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal en m.", default=3.5)
+        self.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' pour les limites de lits", default=0.01)
+        self.add_argument("--constant_ech_long", help="méthode de calcul du nombre de profils interpolés entre profils calculé par profil (constant, ie True) ou par lit (variable, ie False)", action='store_true')

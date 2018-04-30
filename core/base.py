@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Classes :
 * Coord
@@ -8,10 +7,6 @@ Classes :
 * Lit
 * MeshConstructor
 """
-
-# Compatibility with Python2
-from __future__ import print_function
-
 from copy import deepcopy
 from math import ceil
 import numpy as np
@@ -536,7 +531,7 @@ class MeshConstructor:
 
     ### Attributs
     - points
-    - i_pt (curseur pour répérer l'avancement)
+    - i_pt <int> (curseur pour répérer l'avancement)
     - segments
 
     ### Méthodes
@@ -578,7 +573,144 @@ class MeshConstructor:
 
     def export_as_dict(self):
         """
-        Exporter les données pour triangle.triangulate
+        @brief: Exporter les données pour triangle.triangulate
         """
         return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
                 'segments': self.segments}
+
+    def interp(self, profils_travers, lignes_contraintes, pas_trans, pas_long, constant_ech_long):
+        """
+        @param profils_travers <SuiteProfilsTravers>:
+        """
+        print("~> Interpolation sur les profils existants en prenant en compte le passage des lignes de contraintes")
+        for i in range(len(profils_travers)):
+            cur_profil = profils_travers[i]
+            print(cur_profil)
+
+            # Recherche des limites communes "amont"
+            if i == 0:
+                common_limites_id_1 = cur_profil.limites.index
+            else:
+                common_limites_id_1 = cur_profil.common_limits(profils_travers[i - 1])
+
+            # Recherche des limites communes "aval"
+            if i == len(profils_travers) - 1:
+                common_limites_id_2 = cur_profil.limites.index
+            else:
+                common_limites_id_2 = cur_profil.common_limits(profils_travers[i + 1])
+
+            # Union (non ordonnée) des limites amont/aval
+            limites_id = np.union1d(common_limites_id_1, common_limites_id_2)
+            # Ré-ordonne les limites
+            limites_id = cur_profil.limites.index[np.in1d(cur_profil.limites.index, limites_id, assume_unique=True)]
+
+            first_lit = True
+            for id1, id2 in zip(limites_id, limites_id[1:]):
+                lit = cur_profil.extraire_lit(id1, id2)
+                coord_int = lit.interp_along_lit_auto(pas_trans)
+
+                if first_lit:
+                    cur_profil.limites.loc[id1, 'id_pt'] = self.i_pt + 1
+                else:
+                    coord_int = coord_int[1:]
+
+                self.add_points(coord_int)
+
+                cur_profil.limites.loc[id2, 'id_pt'] = self.i_pt
+
+                # Ajoute les nouveaux segments
+                new_i_pt = np.arange(cur_profil.limites['id_pt'].loc[id1],
+                                     cur_profil.limites['id_pt'].loc[id2] + 1)
+                self.add_segments_from_node_list(new_i_pt)
+
+                if first_lit:
+                    first_lit = False
+
+        first_profil = True
+        ### BOUCLE SUR L'ESPACE INTER-PROFIL
+        print("~> Construction du maillage par zone interprofils puis par lit")
+        for i, (prev_profil, next_profil) in enumerate(zip(profils_travers, profils_travers[1:])):
+            print("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
+
+            if constant_ech_long:
+                nb_pts_inter = prev_profil.calcul_nb_pts_inter(next_profil, pas_long)
+                Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter+2)[1:-1]
+
+            # Recherche des limites communes entre les deux profils
+            common_limites_id = prev_profil.common_limits(next_profil)
+            print("Limites de lits communes : {}".format(list(common_limites_id)))
+
+            if len(common_limites_id) < 2:
+                sys.exit("ERREUR: aucune interpolation pour l'intervalle {} ({} limites communes)".format(i, len(common_limites_id)))
+
+            else:
+                first_lit = True
+                ### BOUCLE SUR LES LITS (= MORCEAU(X) DE PROFIL)
+                for id1, id2 in zip(common_limites_id, common_limites_id[1:]):
+                    pt_list_L1 = []
+                    pt_list_L2 = []
+
+                    print("Lit {}-{}".format(id1, id2))
+
+                    # Extraction d'une partie des profils
+                    lit_1 = prev_profil.extraire_lit(id1, id2)
+                    lit_2 = next_profil.extraire_lit(id1, id2)
+
+                    # Abscisses curvilignes le long de la ligne de contrainte
+                    (Xp_profil1_L1, Xp_profil1_L2) = prev_profil.get_Xt_lignes(id1, id2)
+                    (Xp_profil2_L1, Xp_profil2_L2) = next_profil.get_Xt_lignes(id1, id2)
+                    dXp_L1 = Xp_profil2_L1 - Xp_profil1_L1
+                    dXp_L2 = Xp_profil2_L2 - Xp_profil1_L2
+
+                    if dXp_L1 < 0:
+                        sys.exit("La ligne {} n'est pas orientée dans le même ordre que les profils".format(id1))
+                    if dXp_L2 < 0:
+                        sys.exit("La ligne {} n'est pas orientée dans le même ordre que les profils".format(id2))
+
+                    if not constant_ech_long:
+                        nb_pts_inter = ceil(min(dXp_L1, dXp_L2)/pas_long) - 1
+                        Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter+2)[1:-1]
+
+                    L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1, Xp_adm_list)
+                    L2_coord_int = lignes_contraintes[id2].coord_sampling_along_line(Xp_profil1_L2, Xp_profil2_L2, Xp_adm_list)
+
+                    ### BOUCLE SUR LES LIGNES
+                    for j in range(nb_pts_inter):
+                        Xp = Xp_adm_list[j]
+                        P1 = Point(tuple(L1_coord_int[j]))
+                        P2 = Point(tuple(L2_coord_int[j]))
+
+                        lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp, ceil(P1.distance(P2)/pas_trans)+1), ['Xt', 'xt'])
+                        lit_int.move_between_targets(P1, P2)
+                        coord_int = lit_int.array[['X', 'Y', 'Z']]
+                        pt_list_L1.append(self.i_pt+1)
+
+                        if not first_lit:
+                            # ignore le 1er point car la ligne de contrainte a déjà été traitée
+                            coord_int = coord_int[1:]
+
+                        self.add_points(coord_int)
+
+                        pt_list_L2.append(self.i_pt)
+
+                    pt_list_L2 = np.array([prev_profil.limites['id_pt'].loc[id2]] + pt_list_L2 + [next_profil.limites['id_pt'].loc[id2]])
+                    self.add_segments_from_node_list(pt_list_L2)
+
+                    if first_lit:
+                        pt_list_L1 = np.array([prev_profil.limites['id_pt'].loc[id1]] + pt_list_L1 + [next_profil.limites['id_pt'].loc[id1]])
+                        self.add_segments_from_node_list(pt_list_L1)
+                        first_lit = False
+
+            if first_profil:
+                first_profil = False
+
+    def corr_epis(self, epis, dist_corr_epi):
+        print("~> Correction de la bathymétrie autour des épis")
+        for epi in epis:
+            epi_geom = epi.coord.convert_as_linestring()
+            for i, coord in enumerate(self.points):
+                pt_node = Point(tuple(coord))
+                if epi_geom.distance(pt_node) < dist_corr_epi:
+                    Xt_proj = epi_geom.project(pt_node)
+                    pt_proj = epi_geom.interpolate(Xt_proj)
+                    self.points['Z'][i] = pt_proj.z
