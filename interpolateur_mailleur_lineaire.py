@@ -38,38 +38,30 @@ def main(args):
     if has_epi:
         epis = SuiteProfilsTravers(args.infile_epis, "Épi", field=args.attr_epis)
 
-    print("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
-    profils_travers_ori.calculer_dist_proj_axe(axe)
-    profils_dist_proj_axe = np.array([profil.dist_proj_axe for profil in profils_travers_ori])
-
-    print("~> Recherche des limites de lits")
+    profils_travers_ori.compute_dist_proj_axe(axe)
     profils_travers_ori.find_and_add_limits(lignes_contraintes, args.dist_max)
 
-    print("~> Vérifications non intersections des profils et des épis")
     profils_travers = profils_travers_ori
     profils_travers.check_intersections()
-
-    print("~> Classement des profils (et épis) le long de l'axe hydraulique")
-    profils_travers.calculer_dist_proj_axe(axe)
-    profils_travers = sorted(profils_travers, key=lambda x: x.dist_proj_axe)
+    profils_travers.sort_by_dist()
 
     mesh_constr = MeshConstructor()
-    mesh_constr.interp(profils_travers, lignes_contraintes, args.pas_trans, args.pas_long, args.constant_ech_long)
+    mesh_constr.build_interp(profils_travers, lignes_contraintes, args.pas_trans, args.pas_long, args.constant_ech_long)
 
     if has_epi:
-        mesh_constr.corr_epis(epis, args.dist_corr_epi)
+        mesh_constr.corr_bathy_on_epis(epis, args.dist_corr_epi)
 
     print("~> Exports en xyz puis en CSV des données")
 
     with open(args.outfile_semis, 'wb') as fileout:
         np.savetxt(fileout, mesh_constr.points, fmt='%.4f')
 
-    first_profil = True
-    for profil in profils_travers:
-        profil.export_profil_csv(args.outfile_profils, first_profil, SEP, DIGITS)
-        profil.export_limites_csv(args.outfile_limites, first_profil, SEP, DIGITS)
-        if first_profil:
-            first_profil = False
+    # first_profil = True
+    # for profil in profils_travers:
+    #     profil.export_profil_csv(args.outfile_profils, first_profil, SEP, DIGITS)
+    #     profil.export_limites_csv(args.outfile_limites, first_profil, SEP, DIGITS)
+    #     if first_profil:
+    #         first_profil = False
 
     print("~> Calcul du maillage")
 

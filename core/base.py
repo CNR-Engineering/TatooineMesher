@@ -372,6 +372,7 @@ class SuiteProfilsTravers:
         @param lignes_contraintes <[LigneContrainte]>: lignes de contraintes
         @param dist_max <float>:
         """
+        print("~> Recherche des limites de lits")
         for i, profil_travers in enumerate(self):
             for ligne_contrainte in lignes_contraintes:
                 profil_travers.find_and_add_limit(ligne_contrainte, dist_max)
@@ -382,6 +383,7 @@ class SuiteProfilsTravers:
             print("{} limites trouvées avec les lignes {}".format(len(limits), limits))
 
     def check_intersections(self):
+        print("~> Vérifications non intersections des profils et des épis")
         intersections = get_intersections([profil.geom for profil in self])
         if intersections:
             print("Les intersections suivantes sont trouvées")
@@ -389,12 +391,13 @@ class SuiteProfilsTravers:
                 print("- entre '{}' et '{}'".format(self[i], self[j]))
             sys.exit("ERREUR: Des profils s'intersectent")
 
-    def calculer_dist_proj_axe(self, axe_geom):
+    def compute_dist_proj_axe(self, axe_geom):
         """
         @brief: Calculer la distance projetée sur l'axe
         @param axe_geom <shapely.geometry.LineString>: axe hydraulique
         /!\ Orientation de l'axe
         """
+        print("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
         for profil in self:
             profil_geom = profil.geom
             if profil_geom.intersects(axe_geom):
@@ -406,6 +409,23 @@ class SuiteProfilsTravers:
             else:
                 print(list(profil.geom.coords))
                 sys.exit("ERREUR: Le '{}' n'intersection pas l'axe".format(profil))
+
+    def sort_by_dist(self):
+        self.suite = sorted(self.suite, key=lambda x: x.dist_proj_axe)
+
+    def export_profil_shp(self, outfile_profils):
+        """
+        Write a shapefile with 3D Points
+        @param outfile_profils <str>: output file name
+        """
+        w = shp.MyWriter(shapeType=shapefile.POINTZ)
+        w.field('profil_id', 'C')
+        w.field('Z', 'N', decimal=6)
+        for profil in self.suite:
+            for (x, y, z) in list(profil.geom.coords):
+                w.point(x, y, z)
+                w.record(str(profil.id), z)
+        w.save(outfile_profils)
 
 
 class LigneContrainte:
@@ -578,7 +598,7 @@ class MeshConstructor:
         return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
                 'segments': self.segments}
 
-    def interp(self, profils_travers, lignes_contraintes, pas_trans, pas_long, constant_ech_long):
+    def build_interp(self, profils_travers, lignes_contraintes, pas_trans, pas_long, constant_ech_long):
         """
         @param profils_travers <SuiteProfilsTravers>:
         """
@@ -704,7 +724,7 @@ class MeshConstructor:
             if first_profil:
                 first_profil = False
 
-    def corr_epis(self, epis, dist_corr_epi):
+    def corr_bathy_on_epis(self, epis, dist_corr_epi):
         print("~> Correction de la bathymétrie autour des épis")
         for epi in epis:
             epi_geom = epi.coord.convert_as_linestring()
