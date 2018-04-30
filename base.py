@@ -12,15 +12,15 @@ Classes :
 # Compatibility with Python2
 from __future__ import print_function
 
-# from common.arg_command_line import myargparse
 from copy import deepcopy
-from geom.dataset import BlueKenueRead_i2s, BlueKenueRead_i3s, BlueKenueWrite_i2s
 from math import ceil
 import numpy as np
 from numpy.lib.recfunctions import append_fields
 import pandas as pd
 from shapely.geometry import LineString, Point
 import sys
+
+from geom.dataset import BlueKenueRead_i2s, BlueKenueRead_i3s, BlueKenueWrite_i2s
 
 
 # FUNCTIONS
@@ -76,7 +76,7 @@ class Droite:
         """
         yC = (self.a - other.a)/(self.a*other.b - other.a*self.b)
         xC = (1 - self.b*yC)/self.a
-        return (xC, yC)
+        return xC, yC
 
     def ratio_along_line(self, xM, yM):
         """
@@ -126,7 +126,7 @@ class Coord:
             if not strictly_increasing(self.array['Xt']):
                 print("ATTENTION : Des points doublons sont éliminés")
                 # Suppression des doublons (points superposés dans la polyligne)
-                points_a_conserver = np.ediff1d(self.array['Xt'], to_begin=1.)!=0.
+                points_a_conserver = np.ediff1d(self.array['Xt'], to_begin=1.) != 0.
                 self.array = self.array[points_a_conserver]
 
     def compute_Xt(self):
@@ -139,17 +139,14 @@ class Coord:
         self.array = append_fields(self.array, 'Xt', Xt, usemask=False)
 
     def compute_xt(self):
-        global xt, arf, toto
         """
         Calcul de l'asbcisse curviligne adimensionnée (de 0 à 1)
         /!\ La colonne 'Xt' doit déjà exister
         """
-        toto = deepcopy(self.array)
-        arf = len(self.array)
         if len(self.array) > 1:
             xt = (self.array['Xt'] - self.array['Xt'][0])/(self.array['Xt'][-1] - self.array['Xt'][0])
         else:
-            xt = np.empty(arf)
+            xt = np.empty(len(self.array))
             xt.fill(-999.)
         self.array = append_fields(self.array, 'xt', xt, usemask=False)
 
@@ -516,6 +513,7 @@ class SuiteProfilsTravers:
 
     # def concat(self, other)
 
+
 class LigneContrainte:
     """
     LigneContrainte: polyligne ouverte permettant de distinguer les lits
@@ -562,7 +560,6 @@ class LigneContrainte:
         Xp1, Xp2 <float>: abscisses de début et de fin
         """
         nb_pts_long = len(Xp_adm_int)
-        X_int = np.empty(nb_pts_long)
 
         # Construction de la liste des abscisses cibles (en mètres)
         Xp = (1 - Xp_adm_int)*Xp1 + Xp_adm_int*Xp2
@@ -678,10 +675,8 @@ class MeshConstructor:
         """
         Exporter les données pour triangle.triangulate
         """
-        tri = {}
-        tri['vertices'] = np.array(np.column_stack((self.points['X'], self.points['Y'])))
-        tri["segments"]= self.segments
-        return tri
+        return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
+                'segments': self.segments}
 
     def debug(self, out_semis='debug_out_semis.xyz', out_i2s='debug_out_semis.i2s'):
         with open(out_semis, mode='wb') as fileout:
@@ -692,6 +687,3 @@ class MeshConstructor:
             for i, (n1, n2) in enumerate(self.segments):
                 linestring = LineString([self.points[n1], self.points[n2]])
                 i2s.write_polyline(linestring, i)
-
-
-

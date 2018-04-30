@@ -1,5 +1,5 @@
 <?xml version="1.0" ?>
-<!-- This file contains x and y reversed in purpose (because arcpy is buggy...) -->
+<!-- 3D Coordinates (Northing Easting Elevation) with triangular elements connectivity table -->
 <LandXML version="1.2" xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd">
   <Surfaces>
     <Surface name="My TIN">
