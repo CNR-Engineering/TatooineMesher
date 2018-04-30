@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 
-(Abscisse LineString et ... donnent le même calcul...)
+* intégration de seuils (correction locale de la bathymétrie)
 
-Repris de : J:\DI-Affaires-2014\I.00846.001 - Endiguement chambéry\4- déroulement d'affaire\4-3 mission\5. Hydraulique\01-Domaine&topo\lit_mineur\_scripts avec l'exemple de la Leysse amont
+Remarque : les abscisses recalculées par l'outil sont identiques à celle données par le module shapely (pour les LineString).
+
+Code source repris de :
+J:\DI-Affaires-2014\I.00846.001 - Endiguement chambéry\4- déroulement d'affaire\4-3 mission\5. Hydraulique\01-Domaine&topo\lit_mineur\_scripts avec l'exemple de la Leysse amont
 """
 
 # Compatibility with Python2
@@ -51,20 +54,6 @@ parser.add_argument("outfile_profils", help="profils en csv")
 
 args = parser.parse_args()
 
-# class args:
-#     pass
-# args.infile_axe = "axe_hydraulique.i2s"
-# args.infile_profils_travers = "Lit_Mineur_Leysse_Amont_profils_et_epis_shift.i3s"
-# args.infile_lignes_contraintes = "Lignes_Contraintes_Leysse_Amont_shift.i2s"
-# args.infile_epis = "epis.i3s"
-# args.dist_corr_epi = 0.1
-# args.dist_max = 0.01
-# args.constant_ech_long = False
-
-# args.outfile_mesh = 'mesh_leysse_amont.t3s'
-# args.outfile_semis = 'out_semis.xyz'
-# args.outfile_limites = 'limites.csv'
-# args.outfile_profils = 'profils.csv'
 
 # MAIN
 t1 = time.clock()
@@ -74,7 +63,7 @@ print("~> Lecture des fichiers d'entrées")
 # Parcours des fichiers d'entrée
 axe = get_axe_hydraulique(args.infile_axe)
 profils_travers_ori = SuiteProfilsTravers(args.infile_profils_travers, "Profils en travers", value_as_id=True)
-lignes_contraintes = LigneContrainte.get_lines_from_i2s(args.infile_lignes_contraintes)
+lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes)
 
 if args.infile_epis is not None and args.dist_corr_epi is not None:
     has_epi = True
@@ -145,7 +134,6 @@ for i in range(len(profils_travers)):
         if first_lit:
             first_lit = False
 
-# mesh_constr.debug()
 
 first_profil = True
 ### BOUCLE SUR L'ESPACE INTER-PROFIL

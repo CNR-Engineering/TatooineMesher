@@ -6,12 +6,10 @@
       <Definition surfType="TIN">
         <Pnts>
 {%- for (x, y, z) in nodes %}          <P id="{{ loop.index }}">{{ y }} {{ x }} {{ z }}</P>
-
 {% endfor %}
         </Pnts>
         <Faces>
 {%- for e1, e2, e3 in ikle %}          <F id="{{ loop.index }}">{{ e1 }} {{ e2 }} {{ e3 }}</F>
-
 {% endfor %}
         </Faces>
       </Definition>

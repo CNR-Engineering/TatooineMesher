@@ -17,7 +17,8 @@ from math import ceil
 import numpy as np
 from numpy.lib.recfunctions import append_fields
 import pandas as pd
-from pyteltools.geom import BlueKenue as bk
+from pyteltools.geom import BlueKenue as bk, Shapefile as shp
+import shapefile
 from shapely.geometry import LineString, Point
 import sys
 
@@ -37,7 +38,7 @@ class Coord:
     - compute_xp
     - move_between_targets
     """
-    LABELS = ['X', 'Y', 'Z', 'Xt', 'xt']  # nevers used...
+    LABELS = ['X', 'Y', 'Z', 'Xt', 'xt']
 
     def __init__(self, array, vars2add, remove_duplicates=False):
         """
@@ -126,7 +127,7 @@ class ProfilTravers:
     ### Attributs
     - id <integer>: identifiant unique (numérotation automatique commençant à 0)
     - coord <Coord>
-    - geom <LineString>: objet géometrique
+    - geom <shapely.geometry.LineString>: objet géometrique
     - limites <dict>: dictionnaire du type: {id_ligne: (Xt_profil, Xt_ligne, intersection.z)}
     - dist_proj_axe (créée par une méthode de <SuiteProfilsTravers>)
 
@@ -162,7 +163,7 @@ class ProfilTravers:
 
     def _add_limit(self, id_ligne, Xt_profil, Xt_ligne, point):
         """Ajoute une nouvelle limite au profil"""
-        corr_bug = self.geom.interpolate(Xt_profil).z  # DEBUG: l'altitude du point semble être buggée (ie point.z) pour de grosses données? Il vaut mieux la recalculer avec Xt_profil
+        corr_bug = self.geom.interpolate(Xt_profil).z  # L'altitude du point semble être buggée (ie point.z) pour de grosses données. Par précaution, on la recalcule avec Xt_profil
         row = pd.DataFrame({'Xt_profil': Xt_profil, 'Xt_ligne': Xt_ligne,
                             'X': point.x, 'Y': point.y, 'Z': corr_bug},
                            index=[id_ligne])
@@ -176,7 +177,7 @@ class ProfilTravers:
 
     def find_and_add_limit(self, ligne_contrainte, dist_max=None):
         """
-        @param ligne_contrainte <LineString>: ligne de contrainte 2D
+        @param ligne_contrainte <shapely.geometry.LineString>: ligne de contrainte 2D
         @param dist_max <float>: distance de tolérance pour détecter des intersections
         """
         if self.geom.intersects(ligne_contrainte.geom):
@@ -218,10 +219,10 @@ class ProfilTravers:
 
     def extraire_lit(self, id_lit_1, id_lit_2):
         """
-        Extraire les coordonnées d'une partie du profil :
-        Les points du profil compris entre les deux lits et avec éventuellement les points de bord interpolés
-        Retourne un <Lit> avec les colonnes ('X', 'Y', 'Z', 'Xt', 'xt')
-        /!\ id_lit_1 et id_lit_2 doivent être dans l'ordre Xt croissant (plante sinon)
+        @brief: Extraire les coordonnées d'une partie du profil
+            Les points du profil compris entre les deux lits et avec éventuellement les points de bord interpolés
+            /!\ id_lit_1 et id_lit_2 doivent être dans l'ordre Xt croissant (plante sinon)
+        @return <Lit>: avec les colonnes avec les colonnes ('X', 'Y', 'Z', 'Xt', 'xt')
         """
         limit1 = self.get_limit_by_id(id_lit_1)
         limit2 = self.get_limit_by_id(id_lit_2)
@@ -323,20 +324,34 @@ class SuiteProfilsTravers:
     SuiteProfilsTravers: ensemble de profils en travers
 
     ### Attributs
-    - suite <list <ProfilTravers>>
+    - suite <[ProfilTravers]>
 
     ### Méthodes
     - find_and_add_limits
     - calculer_dist_proj_axe
     """
-    def __init__(self, i3s_path, label, value_as_id=False):
+    def __init__(self, filename, label, field=None):
         self.suite = []
-        with bk.Read(i3s_path) as in_i3s:
-            in_i3s.read_header()
-            for i, line in enumerate(in_i3s.get_open_polylines()):
-                #id = value if value_as_id else i
-                id = i
-                self.suite.append(ProfilTravers(id, list(line.polyline().coords), label))
+        if filename.endswith('.i3s'):
+            with bk.Read(filename) as in_i3s:
+                in_i3s.read_header()
+                for i, line in enumerate(in_i3s.get_open_polylines()):
+                    line_id = i if field is None else line.attributes()[0]  # Use `Value` if field is not None
+                    self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), label))
+        elif filename.endswith('.shp'):
+            if shp.get_shape_type(filename) not in (shapefile.POLYLINEZ, shapefile.POLYLINEM):
+                sys.exit("Le fichier %s n'est pas de type POLYLINEZ[M]" % filename)
+            if field is not None:
+                names, index = shp.get_attribute_names(filename)
+                try:
+                    field_index = names.index(field)
+                except ValueError:
+                    sys.exit("Le champ `%s` n'existe pas" % field)
+            for i, line in enumerate(shp.get_open_polylines(filename)):
+                line_id = i if field is None else line.attributes()[field_index]
+                self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), label))
+        else:
+            raise NotImplementedError("Seuls les formats i3s et shp sont supportés pour les profils en travers")
 
     def __add__(self, other):
         newsuite = deepcopy(self)
@@ -371,12 +386,6 @@ class SuiteProfilsTravers:
             print("> {}".format(profil_travers))
             print("{} limites trouvées avec les lignes {}".format(len(limits), limits))
 
-            # Exports en CSV
-            # profil_travers.export_profil_csv(args.outfile_profils, i, first_profil, sep, DIGITS)
-            # profil_travers.export_limites_csv(args.outfile_limites, i, first_profil, sep, DIGITS)
-            # if first_profil:
-            #     first_profil = False
-
     def check_intersections(self):
         intersections = get_intersections([profil.geom for profil in self])
         if intersections:
@@ -387,8 +396,8 @@ class SuiteProfilsTravers:
 
     def calculer_dist_proj_axe(self, axe_geom):
         """
-        Calculer la distance projetée sur l'axe
-        axe_geom <LineString>
+        @brief: Calculer la distance projetée sur l'axe
+        @param axe_geom <shapely.geometry.LineString>: axe hydraulique
         /!\ Orientation de l'axe
         """
         for profil in self:
@@ -411,7 +420,7 @@ class LigneContrainte:
     ### Attributs
     - id <integer>: identifiant unique (numérotation automatique commençant à 0)
     - coord <2D-array float>: coordonnées ['X', 'Y'] des points de la ligne
-    - geom <LineString>: objet géométrique
+    - geom <shapely.geometry.LineString>: objet géométrique
 
     ### Méthodes
     - coord_sampling_along_line
@@ -431,16 +440,24 @@ class LigneContrainte:
         return "Ligne de contrainte n°{} ({} points)".format(self.id, self.nb_points)
 
     @staticmethod
-    def get_lines_from_i2s(i2s_path):
+    def get_lines_from_file(filename):
         """
         Extraction d'objects LineString à partir d'un fichier i2s
         Info: value is ignored
         """
         lines = []
-        with bk.Read(i2s_path) as in_i2s:
-            in_i2s.read_header()
-            for i, line in enumerate(in_i2s.get_open_polylines()):
+        if filename.endswith('.i2s'):
+            with bk.Read(filename) as in_i2s:
+                in_i2s.read_header()
+                for i, line in enumerate(in_i2s.get_open_polylines()):
+                    lines.append(LigneContrainte(i, list(line.polyline().coords)))
+        elif filename.endswith('.shp'):
+            if shp.get_shape_type(filename) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
+                sys.exit("Le fichier %s n'est pas de type POLYLINE[ZM]" % filename)
+            for i, line in enumerate(shp.get_open_polylines(filename)):
                 lines.append(LigneContrainte(i, list(line.polyline().coords)))
+        else:
+            raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour les profils en travers")
         return lines
 
     def coord_sampling_along_line(self, Xp1, Xp2, Xp_adm_int):
