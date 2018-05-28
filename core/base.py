@@ -6,18 +6,27 @@ Classes :
 * LignesContrainte
 * Lit
 * MeshConstructor
+
+Remarque : les abscisses recalculées par l'outil sont identiques à celle données par le module shapely (pour les LineString).
 """
 from copy import deepcopy
+from jinja2 import Environment, FileSystemLoader
 from math import ceil
 import numpy as np
 from numpy.lib.recfunctions import append_fields
+import os.path
 import pandas as pd
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 import shapefile
 from shapely.geometry import LineString, Point
 import sys
+import time
+import triangle
 
 from .utils import get_intersections, float_vars, strictly_increasing
+
+
+DIGITS = 4  # for csv and xml exports
 
 
 class Coord:
@@ -152,6 +161,7 @@ class ProfilTravers:
 
         self.limites = pd.DataFrame(columns=['Xt_profil', 'Xt_ligne', 'X', 'Y', 'Z', 'id_pt'])
         self.limites['id_pt'] = self.limites['id_pt'].astype(int)  # FIXME change dtype
+        self.dist_proj_axe = -1
 
     def __repr__(self):
         return "{} #{} ({} points)".format(self.label, self.id, self.nb_points)
@@ -261,7 +271,7 @@ class ProfilTravers:
         @brief: Trie les limites par Xt croissants
         Étape nécessaire pour chercher les limites communes entre deux profils plus facilement
         """
-        self.limites = self.limites.sort_index(by='Xt_profil')  #FIXME: FutureWarning
+        self.limites = self.limites.sort_values(by='Xt_profil')
 
     def calcul_nb_pts_inter(self, other, pas_long):
         """
@@ -563,18 +573,30 @@ class MeshConstructor:
     /!\ Les éléments sont numérotés à partir de 0
       (dans le tableau segments)
     """
-    def __init__(self):
-        self.points = np.empty(0, dtype=float_vars(['X', 'Y', 'Z']))
+    POINTS_DTYPE = float_vars(['X', 'Y', 'Z', 'profil']) + [(var, np.int) for var in ('lit', )]
+
+    def __init__(self, profils_travers, pas_trans):
+        self.profils_travers = profils_travers
+        self.pas_trans = pas_trans
+
+        self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE)
         self.i_pt = -1
         self.segments = np.empty([0, 2], dtype=np.int)
+        self.triangle = None  # set by `build_mesh`
 
-    def add_points(self, coord):
+    def add_points(self, coord, profil, lit):
         """!
         @brief: Ajouter des sommets/noeuds
-        @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', 'Z']
+        @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', ...] (voir POINTS_DTYPE)
         """
-        self.i_pt += len(coord)
-        self.points = np.hstack((self.points, coord))
+        new_coord = np.empty(len(coord), dtype=MeshConstructor.POINTS_DTYPE)
+        for var in ('X', 'Y', 'Z'):  # copy existing columns
+            new_coord[var] = coord[var]
+        #FIXME: avoid copying in using np.lib.recfunctions.append_fields?
+        new_coord['profil'] = profil
+        new_coord['lit'] = lit
+        self.i_pt += len(new_coord)
+        self.points = np.hstack((self.points, new_coord))
 
     def add_segments(self, seg):
         """!
@@ -598,26 +620,23 @@ class MeshConstructor:
         return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
                 'segments': self.segments}
 
-    def build_interp(self, profils_travers, lignes_contraintes, pas_trans, pas_long, constant_ech_long):
-        """
-        @param profils_travers <SuiteProfilsTravers>:
-        """
+    def build_initial_profiles(self):
         print("~> Interpolation sur les profils existants en prenant en compte le passage des lignes de contraintes")
-        for i in range(len(profils_travers)):
-            cur_profil = profils_travers[i]
+        for i in range(len(self.profils_travers)):
+            cur_profil = self.profils_travers[i]
             print(cur_profil)
 
             # Recherche des limites communes "amont"
             if i == 0:
                 common_limites_id_1 = cur_profil.limites.index
             else:
-                common_limites_id_1 = cur_profil.common_limits(profils_travers[i - 1])
+                common_limites_id_1 = cur_profil.common_limits(self.profils_travers[i - 1])
 
             # Recherche des limites communes "aval"
-            if i == len(profils_travers) - 1:
+            if i == len(self.profils_travers) - 1:
                 common_limites_id_2 = cur_profil.limites.index
             else:
-                common_limites_id_2 = cur_profil.common_limits(profils_travers[i + 1])
+                common_limites_id_2 = cur_profil.common_limits(self.profils_travers[i + 1])
 
             # Union (non ordonnée) des limites amont/aval
             limites_id = np.union1d(common_limites_id_1, common_limites_id_2)
@@ -625,16 +644,16 @@ class MeshConstructor:
             limites_id = cur_profil.limites.index[np.in1d(cur_profil.limites.index, limites_id, assume_unique=True)]
 
             first_lit = True
-            for id1, id2 in zip(limites_id, limites_id[1:]):
+            for j, (id1, id2) in enumerate(zip(limites_id, limites_id[1:])):
                 lit = cur_profil.extraire_lit(id1, id2)
-                coord_int = lit.interp_along_lit_auto(pas_trans)
+                coord_int = lit.interp_along_lit_auto(self.pas_trans)
 
                 if first_lit:
                     cur_profil.limites.loc[id1, 'id_pt'] = self.i_pt + 1
                 else:
                     coord_int = coord_int[1:]
 
-                self.add_points(coord_int)
+                self.add_points(coord_int, profil=cur_profil.dist_proj_axe, lit=j)
 
                 cur_profil.limites.loc[id2, 'id_pt'] = self.i_pt
 
@@ -646,15 +665,20 @@ class MeshConstructor:
                 if first_lit:
                     first_lit = False
 
-        first_profil = True
+    def build_interp(self, lignes_contraintes, pas_long, constant_ech_long):
+        """
+        @param profils_travers <SuiteProfilsTravers>:
+        """
+        self.build_initial_profiles()
+
         ### BOUCLE SUR L'ESPACE INTER-PROFIL
         print("~> Construction du maillage par zone interprofils puis par lit")
-        for i, (prev_profil, next_profil) in enumerate(zip(profils_travers, profils_travers[1:])):
+        for i, (prev_profil, next_profil) in enumerate(zip(self.profils_travers, self.profils_travers[1:])):
             print("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
 
             if constant_ech_long:
                 nb_pts_inter = prev_profil.calcul_nb_pts_inter(next_profil, pas_long)
-                Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter+2)[1:-1]
+                Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
             # Recherche des limites communes entre les deux profils
             common_limites_id = prev_profil.common_limits(next_profil)
@@ -666,7 +690,7 @@ class MeshConstructor:
             else:
                 first_lit = True
                 ### BOUCLE SUR LES LITS (= MORCEAU(X) DE PROFIL)
-                for id1, id2 in zip(common_limites_id, common_limites_id[1:]):
+                for j, (id1, id2) in enumerate(zip(common_limites_id, common_limites_id[1:])):
                     pt_list_L1 = []
                     pt_list_L2 = []
 
@@ -689,18 +713,20 @@ class MeshConstructor:
 
                     if not constant_ech_long:
                         nb_pts_inter = ceil(min(dXp_L1, dXp_L2)/pas_long) - 1
-                        Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter+2)[1:-1]
+                        Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
                     L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1, Xp_adm_list)
                     L2_coord_int = lignes_contraintes[id2].coord_sampling_along_line(Xp_profil1_L2, Xp_profil2_L2, Xp_adm_list)
 
                     ### BOUCLE SUR LES LIGNES
-                    for j in range(nb_pts_inter):
-                        Xp = Xp_adm_list[j]
-                        P1 = Point(tuple(L1_coord_int[j]))
-                        P2 = Point(tuple(L2_coord_int[j]))
+                    for k in range(nb_pts_inter):
+                        Xp = Xp_adm_list[k]
+                        dist_proj_axe = prev_profil.dist_proj_axe*Xp + next_profil.dist_proj_axe*(1 - Xp)
+                        P1 = Point(tuple(L1_coord_int[k]))
+                        P2 = Point(tuple(L2_coord_int[k]))
 
-                        lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp, ceil(P1.distance(P2)/pas_trans)+1), ['Xt', 'xt'])
+                        lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp,
+                                                                  ceil(P1.distance(P2)/self.pas_trans)+1), ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
                         coord_int = lit_int.array[['X', 'Y', 'Z']]
                         pt_list_L1.append(self.i_pt+1)
@@ -709,7 +735,7 @@ class MeshConstructor:
                             # ignore le 1er point car la ligne de contrainte a déjà été traitée
                             coord_int = coord_int[1:]
 
-                        self.add_points(coord_int)
+                        self.add_points(coord_int, profil=dist_proj_axe, lit=j)
 
                         pt_list_L2.append(self.i_pt)
 
@@ -721,16 +747,100 @@ class MeshConstructor:
                         self.add_segments_from_node_list(pt_list_L1)
                         first_lit = False
 
-            if first_profil:
-                first_profil = False
-
     def corr_bathy_on_epis(self, epis, dist_corr_epi):
         print("~> Correction de la bathymétrie autour des épis")
         for epi in epis:
             epi_geom = epi.coord.convert_as_linestring()
             for i, coord in enumerate(self.points):
-                pt_node = Point(tuple(coord))
+                pt_node = Point(tuple(coord[:3]))
                 if epi_geom.distance(pt_node) < dist_corr_epi:
                     Xt_proj = epi_geom.project(pt_node)
                     pt_proj = epi_geom.interpolate(Xt_proj)
                     self.points['Z'][i] = pt_proj.z
+
+    def build_mesh(self):
+        print("~> Calcul du maillage")
+        tri = self.export_as_dict()
+        self.triangle = triangle.triangulate(tri, opts='p')
+        try:
+            nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
+        except KeyError:
+            sys.exit("ERREUR: La génération du maillage a échouée!")
+        print("Génération d'un maillage avec {} noeuds et {} éléments".format(nnode, nelem))
+
+    def export_points(self, path):
+        if path.endswith('.xyz'):
+            print("~> Exports en xyz des points")
+            with open(path, 'wb') as fileout:
+                np.savetxt(fileout, self.points[['X', 'Y', 'Z']], fmt='%.4f')
+        elif path.endswith('.shp'):
+            pass
+        else:
+            raise NotImplementedError
+
+    def export_profiles(self, path):
+        """
+        /!\ Pas cohérent si constant_ech_long est différent de True
+        """
+        if path.endswith('.i3s'):
+            with open(path, 'w') as fileout:
+                fileout.write(':FileType i3s  ASCII  EnSim 1.0\n:EndHeader\n')
+                for dist in np.unique(self.points['profil']):
+                    pos = self.points['profil'] == dist
+
+                    fileout.write('%i %f\n' % (pos.sum(), dist))
+                    for x, y, z in self.points[pos][['X', 'Y', 'Z']]:
+                        fileout.write('%f %f %f\n' % (x, y, z))
+        else:
+            raise NotImplementedError
+
+    def export_mesh(self, path):
+        print("~> Écriture du maillage")
+
+        nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
+        if path.endswith(".t3s"):
+            with open(path, 'w', newline='') as fileout:
+                # Écriture en-tête
+                date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+                fileout.write("""#########################################################################
+:FileType t3s  ASCII  EnSim 1.0
+# Canadian Hydraulics Centre/National Research Council (c) 1998-2012
+# DataType                 2D T3 Scalar Mesh
+#
+:Application              BlueKenue
+:Version                  3.3.4
+:WrittenBy                mailleurtatooine
+:CreationDate             {}
+#
+#------------------------------------------------------------------------
+#
+:NodeCount {}
+:ElementCount {}
+:ElementType  T3
+#
+:EndHeader
+""".format(date, nnode, nelem))
+
+            with open(path, mode='ab') as fileout:
+                # Tableau des coordonnées (x, y, z)
+                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.points['Z'])), delimiter=' ',
+                           fmt='%.{}f'.format(DIGITS))
+
+                # Tableau des éléments (connectivité)
+                np.savetxt(fileout, self.triangle['triangles'] + 1, delimiter=' ', fmt='%i')
+
+        elif path.endswith(".xml"):
+            env = Environment(
+                loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
+            template = env.get_template("LandXML_template.xml")
+            template_render = template.render(
+                nodes=np.round(np.column_stack((self.triangle['vertices'], self.points['Z'])), DIGITS),
+                ikle=self.triangle['triangles'] + 1
+            )
+
+            # Écriture du fichier XML
+            with open(path, 'w') as fileout:
+                fileout.write(template_render)
+
+        else:
+            raise NotImplementedError
