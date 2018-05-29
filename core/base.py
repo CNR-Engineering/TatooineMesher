@@ -17,6 +17,7 @@ from numpy.lib.recfunctions import append_fields
 import os.path
 import pandas as pd
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
+from pyteltools.geom import geometry
 import shapefile
 from shapely.geometry import LineString, Point
 import sys
@@ -792,15 +793,20 @@ class MeshConstructor:
         """
         /!\ Pas cohérent si constant_ech_long est différent de True
         """
-        if path.endswith('.i3s'):
-            with open(path, 'w') as fileout:
-                fileout.write(':FileType i3s  ASCII  EnSim 1.0\n:EndHeader\n')
-                for dist in np.unique(self.points['profil']):
-                    pos = self.points['profil'] == dist
+        lines = []
+        attributes = []
+        for dist in np.unique(self.points['profil']):
+            pos = self.points['profil'] == dist
+            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
+            lines.append(line)
+            attributes.append(dist)
 
-                    fileout.write('%i %f\n' % (pos.sum(), dist))
-                    for x, y, z in self.points[pos][['X', 'Y', 'Z']]:
-                        fileout.write('%f %f %f\n' % (x, y, z))
+        if path.endswith('.i3s'):
+            with bk.Write(path) as out_i3s:
+                out_i3s.write_header()
+                out_i3s.write_lines(lines, attributes)
+        elif path.endswith('.shp'):
+            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
         else:
             raise NotImplementedError
 
