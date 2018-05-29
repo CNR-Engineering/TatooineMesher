@@ -471,19 +471,29 @@ class LigneContrainte:
         Info: value is ignored
         """
         lines = []
-        if filename.endswith('.i2s'):
-            with bk.Read(filename) as in_i2s:
-                in_i2s.read_header()
-                for i, line in enumerate(in_i2s.get_open_polylines()):
+        if filename is not None:
+            if filename.endswith('.i2s'):
+                with bk.Read(filename) as in_i2s:
+                    in_i2s.read_header()
+                    for i, line in enumerate(in_i2s.get_open_polylines()):
+                        lines.append(LigneContrainte(i, list(line.polyline().coords)))
+            elif filename.endswith('.shp'):
+                if shp.get_shape_type(filename) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
+                    sys.exit("Le fichier %s n'est pas de type POLYLINE[ZM]" % filename)
+                for i, line in enumerate(shp.get_open_polylines(filename)):
                     lines.append(LigneContrainte(i, list(line.polyline().coords)))
-        elif filename.endswith('.shp'):
-            if shp.get_shape_type(filename) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
-                sys.exit("Le fichier %s n'est pas de type POLYLINE[ZM]" % filename)
-            for i, line in enumerate(shp.get_open_polylines(filename)):
-                lines.append(LigneContrainte(i, list(line.polyline().coords)))
-        else:
-            raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour les profils en travers")
+            else:
+                raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour les profils en travers")
         return lines
+
+    @staticmethod
+    def get_lines_from_profils(profils_en_travers):
+        first_coords = []
+        last_coords = []
+        for profil in profils_en_travers:
+            first_coords.append(profil.geom.coords[0][:2])
+            last_coords.append(profil.geom.coords[-1][:2])
+        return [LigneContrainte(0, first_coords), LigneContrainte(1, last_coords)]
 
     def coord_sampling_along_line(self, Xp1, Xp2, Xp_adm_int):
         """

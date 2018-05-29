@@ -14,13 +14,16 @@ def main(args):
     print("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
     profils_travers = SuiteProfilsTravers(args.infile_profils_travers, "Profils en travers", field=args.attr_profils_travers)
-    lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes)
 
     profils_travers.compute_dist_proj_axe(axe)
-    profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
-
     profils_travers.check_intersections()
     profils_travers.sort_by_dist()
+
+    if args.infile_lignes_contraintes is None:
+        lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
+    else:
+        lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes)
+    profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
     mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, True)
