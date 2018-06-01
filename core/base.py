@@ -43,16 +43,18 @@ class Coord:
     - compute_xp
     - move_between_targets
     """
-    LABELS = ['X', 'Y', 'Z', 'Xt', 'xt']
-
     def __init__(self, array, vars2add, remove_duplicates=False):
         """
         array: X, Y (Z is optional)
         Add Xt and xt columns if not already present
         """
         self.array = array
-
         vars = list(self.array.dtype.fields)
+        self.z_labels = []
+        for var in vars:
+            if var not in ('X', 'Y', 'Xt', 'xt'):
+                self.z_labels.append(var)
+
         if 'X' not in vars and 'Y' not in vars:
             sys.exit("Columns X and Y are compulsary. Following columns were found: {}".format(vars))
 
@@ -124,6 +126,11 @@ class Coord:
     def convert_as_linestring(self):
         return LineString(self.convert_as_array())
 
+    def set_layers(self, z_values):
+        self.z_labels = list(z_values.dtype.names)
+        for z_label in self.z_labels:
+            self.array = np.lib.recfunctions.append_fields(self.array, z_label, z_values[z_label], usemask=False)
+
 
 class ProfilTravers:
     """
@@ -131,32 +138,34 @@ class ProfilTravers:
 
     ### Attributs
     - id <integer>: identifiant unique (numérotation automatique commençant à 0)
-    - coord <Coord>
-    - geom <shapely.geometry.LineString>: objet géometrique
+    - coord <Coord>: coordonnées (avec tous les niveaux)
+    - geom <shapely.geometry.LineString>: objet géometrique 2D
     - limites <dict>: dictionnaire du type: {id_ligne: (Xt_profil, Xt_ligne, intersection.z)}
     - dist_proj_axe (créée par une méthode de <SuiteProfilsTravers>)
 
     ### Méthodes
     - _add_limit
     - get_limit_by_id
+    - get_Xt_lignes
     - find_and_add_limit
     - common_limits
     - extraire_lit
     - sort_limites
-    - export_profil_csv
-    - export_limites_csv
     - calcul_nb_pts_inter
+    - change_coord
     """
     LABELS = ['X', 'Y', 'Z', 'Xt']
 
-    def __init__(self, id, coord, label):
+    def __init__(self, id, coord, z_values, label):
         """
         Créer un profil à partir d'un semis de points ordonnés (coordonnées X,Y,Z)
         Aucune limite de lit n'est déclarée lorsque l'objet est créé
         """
         self.id = id
         self.label = label
-        self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y', 'Z'])), ['Xt'])
+        self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y'])), ['Xt'])
+        self.coord.set_layers(z_values)
+
         self.nb_points = len(self.coord.array)
         self.geom = LineString(coord)  # FIXME: contient toujours les points doublons
 
@@ -169,10 +178,11 @@ class ProfilTravers:
 
     def _add_limit(self, id_ligne, Xt_profil, Xt_ligne, point):
         """Ajoute une nouvelle limite au profil"""
-        corr_bug = self.geom.interpolate(Xt_profil).z  # L'altitude du point semble être buggée (ie point.z) pour de grosses données. Par précaution, on la recalcule avec Xt_profil
+        z_values = {}
+        for label in self.coord.z_labels:
+            z_values[label] = np.interp(Xt_profil, self.coord.array['Xt'], self.coord.array[label])
         row = pd.DataFrame({'Xt_profil': Xt_profil, 'Xt_ligne': Xt_ligne,
-                            'X': point.x, 'Y': point.y, 'Z': corr_bug},
-                           index=[id_ligne])
+                            'X': point.x, 'Y': point.y, **z_values}, index=[id_ligne])
         self.limites = self.limites.append(row)
 
     def get_limit_by_id(self, id_ligne):
@@ -245,19 +255,19 @@ class ProfilTravers:
 
         # Ajoute le premier point si nécessaire
         if Xt1 not in Xt_profil:
-        # if min(abs((Xt_profil - Xt1)) > 0.1):
-            row = np.array([(limit1['X'], limit1['Y'], limit1['Z'], Xt1)], dtype=float_vars(ProfilTravers.LABELS))
+            row = np.array([tuple(limit1[var] if var != 'Xt' else Xt1 for var in sub_coord.dtype.names)],
+                           dtype=sub_coord.dtype)
             sub_coord = np.insert(sub_coord, 0, row)
 
         # Ajoute le dernier point si nécessaire
         if Xt2 not in Xt_profil:
-        # if min(abs((Xt_profil - Xt2)) > 0.1):
-            row = np.array([(limit2['X'], limit2['Y'], limit2['Z'], Xt2)], dtype=float_vars(ProfilTravers.LABELS))
+            row = np.array([tuple(limit2[var] if var != 'Xt' else Xt2 for var in sub_coord.dtype.names)],
+                           dtype=sub_coord.dtype)
             sub_coord = np.append(sub_coord, row)
 
         # Vérification de l'ordre des points
         if not strictly_increasing(sub_coord['Xt']):
-            print("/!\ Les Xt ne sont pas strictement croissants")  #FIXME: should not appear
+            print("/!\ Les Xt ne sont pas strictement croissants")  #FIXME: It should not append
             print(sub_coord['Xt'])
             print("Veuillez vérifier ci-dessus, avec les limites suivantes :")
             print(limit1)
@@ -284,45 +294,20 @@ class ProfilTravers:
         dist_min_profil = self.geom.distance(other.geom)
         return ceil(dist_min_profil/pas_long) - 1
 
-    def export_profil_csv(self, outfile_profils, first, sep, digits):
-        """
-        Exporter les coordonnées dans un fichier CSV
-        @param first <bool>:
-            - True: effacement du fichier et ajout de l'entête avant écriture du profil
-            - False: ajout du profil en fin de fichier
-        """
-        coord = self.coord.array
-
-        # Ajout de la colonne id_profil
-        # np_id_profil = np.empty(len(coord), dtype=np.int) #FIXME: modifier aussi avec le format
-        np_id_profil = np.empty(len(coord), dtype=np.float)
-        np_id_profil.fill(self.id)
-        coord = append_fields(coord, 'id_profil', np_id_profil, usemask=False)
-
-        fmt = sep.join(["%.{}f".format(digits)] * (len(coord.dtype.fields)-1) + ["%.1f"])  #FIXME: normalement format int pour id_profil
-        if first:
-            # Write header
-            with open(outfile_profils, mode='w', newline='') as fileout:
-                fileout.write(sep.join(coord.dtype.names) + '\n')
-        with open(outfile_profils, mode='ab') as fileout:
-            np.savetxt(fileout, coord, delimiter=sep, fmt=fmt)
-
-    def export_limites_csv(self, outfile_limites, first, sep, digits):
-        """
-        Exporter les limites dans un fichier CSV
-        """
-        mode = 'w' if first else 'a'
-        limites = deepcopy(self.limites)
-        # Ajout des identifiants comme colonne
-        limites['id_profil'] = self.id
-        limites['id_ligne'] = limites.index
-        limites.to_csv(outfile_limites, header=first, mode=mode, sep=sep, index=False, float_format="%.{}f".format(digits)) #FIXME: le format est plutôt pour id_profil aussi
-
     def change_coord(self, array):
         self.coord.array = array
         self.coord.compute_Xt()
         self.nb_points = len(self.coord.array)
         self.geom = self.coord.convert_as_linestring()
+
+
+def get_field_index(filename, field_id):
+    if field_id is not None:
+        names, _ = shp.get_attribute_names(filename)
+        try:
+            return names.index(field_id)
+        except ValueError:
+            sys.exit("Le champ `%s` n'existe pas" % field_id)
 
 
 class SuiteProfilsTravers:
@@ -336,26 +321,51 @@ class SuiteProfilsTravers:
     - find_and_add_limits
     - calculer_dist_proj_axe
     """
-    def __init__(self, filename, label, field=None):
+    def __init__(self, filename, label, field_id=None):
         self.suite = []
         if filename.endswith('.i3s'):
             with bk.Read(filename) as in_i3s:
                 in_i3s.read_header()
                 for i, line in enumerate(in_i3s.get_open_polylines()):
-                    line_id = i if field is None else line.attributes()[0]  # Use `Value` if field is not None
-                    self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), label))
+                    line_id = i if field_id is None else line.attributes()[0]  # Use `Value` if field is not None
+                    z_array = np.array([(coord[2], ) for coord in line.polyline().coords], dtype=float_vars('Z'))
+                    if line.to_2d:
+                        line = line.to_2d()
+                    self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
         elif filename.endswith('.shp'):
-            if shp.get_shape_type(filename) not in (shapefile.POLYLINEZ, shapefile.POLYLINEM):
-                sys.exit("Le fichier %s n'est pas de type POLYLINEZ[M]" % filename)
-            if field is not None:
-                names, index = shp.get_attribute_names(filename)
-                try:
-                    field_index = names.index(field)
-                except ValueError:
-                    sys.exit("Le champ `%s` n'existe pas" % field)
-            for i, line in enumerate(shp.get_open_polylines(filename)):
-                line_id = i if field is None else line.attributes()[field_index]
-                self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), label))
+            shp_type = shp.get_shape_type(filename)
+            if shp_type in (shapefile.POLYLINEZ, shapefile.POLYLINEM):
+                field_id_index = get_field_index(filename, field_id)
+                for i, line in enumerate(shp.get_open_polylines(filename)):
+                    line_id = i if field_id is None else line.attributes()[field_id_index]
+                    z_array = np.array([(coord[2], ) for coord in line.polyline().coords], dtype=float_vars('Z'))
+                    if line.to_2d:
+                        line = line.to_2d()
+                    self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
+            elif shp_type == shapefile.POINTZ:
+                field_id_index = get_field_index(filename, field_id)
+                field_indexes, field_names = [], []
+                for index, name in shp.get_numeric_attribute_names(filename):
+                    if name.startswith('Z'):
+                        field_indexes.append(index)
+                        field_names.append(name)
+                print('Variables : %s' % field_names)
+                coords, z_layers = [], []
+                last_point_id = None
+                for i, (point, attributes) in enumerate(shp.get_points(filename, with_z=True)):
+                    point_id = i if field_id is None else attributes[field_id_index]
+                    if i > 0 and point_id != last_point_id:
+                        z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
+                        self.suite.append(ProfilTravers(last_point_id, coords, z_array, label))
+                        coords, z_layers = [], []
+                    coords.append(point[:2])
+                    z_layers.append((point[2],) + tuple(attributes[index] for index in field_indexes))
+                    last_point_id = point_id
+                z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
+                self.suite.append(ProfilTravers(last_point_id, coords, z_array, label))
+            else:
+                sys.exit("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
+
         else:
             raise NotImplementedError("Seuls les formats i3s et shp sont supportés pour les profils en travers")
 
@@ -441,7 +451,7 @@ class SuiteProfilsTravers:
 
 class LigneContrainte:
     """
-    LigneContrainte: polyligne ouverte permettant de distinguer les lits
+    LigneContrainte: polyligne 2D ouverte permettant de distinguer les lits
 
     ### Attributs
     - id <integer>: identifiant unique (numérotation automatique commençant à 0)
@@ -509,7 +519,7 @@ class LigneContrainte:
         coord_int = []
         for Xp_cur in Xp:
             point = self.geom.interpolate(Xp_cur)
-            coord_int.append(point.coords[0])
+            coord_int.append(point.coords[0][:2])
         np_coord_int = np.array(coord_int, dtype=float_vars(['X', 'Y']))
 
         return np_coord_int
@@ -530,7 +540,8 @@ class Lit(Coord):
     - interp_along_lit
     - interp_inter_lineaire
     """
-    VARS2INT = ['X', 'Y', 'Z']
+    def var2int(self):
+        return ['X', 'Y'] + self.z_labels
 
     def interp_along_lit_auto(self, pas_trans):
         nb_pts_trans = ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
@@ -543,9 +554,8 @@ class Lit(Coord):
         @param Xt_adm_list <1D-array float>: distance adimensionnée (valeurs entre 0 et 1)
         """
         nb_pts_trans = len(Xt_adm_list)
-        array_ech = np.empty(nb_pts_trans, dtype=float_vars(Lit.VARS2INT))
-
-        for label in Lit.VARS2INT:
+        array_ech = np.empty(nb_pts_trans, dtype=float_vars(self.var2int()))
+        for label in self.var2int():
             array_ech[label] = np.interp(Xt_adm_list, self.array['xt'], self.array[label])
         return array_ech
 
@@ -559,10 +569,10 @@ class Lit(Coord):
 
         array_1 = self.interp_along_lit(Xt_adm_list)
         array_2 = other.interp_along_lit(Xt_adm_list)
-        array = np.empty(nb_pts_trans, dtype=float_vars(Lit.VARS2INT))
+        array = np.empty(nb_pts_trans, dtype=float_vars(self.var2int()))
 
-        for label in Lit.VARS2INT:
-            array[label] = (1-coeff)*array_1[label] + coeff*array_2[label]
+        for var in self.var2int():
+            array[var] = (1-coeff)*array_1[var] + coeff*array_2[var]
         return array
 
 
@@ -584,13 +594,14 @@ class MeshConstructor:
     /!\ Les éléments sont numérotés à partir de 0
       (dans le tableau segments)
     """
-    POINTS_DTYPE = float_vars(['X', 'Y', 'Z', 'profil']) + [(var, np.int) for var in ('lit', )]
+    POINTS_DTYPE = float_vars(['X', 'Y', 'profil']) + [(var, np.int) for var in ('lit', )]
 
     def __init__(self, profils_travers, pas_trans):
         self.profils_travers = profils_travers
         self.pas_trans = pas_trans
 
-        self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE)
+        self.z_labels = profils_travers[0].coord.z_labels
+        self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE + float_vars(self.z_labels))
         self.i_pt = -1
         self.segments = np.empty([0, 2], dtype=np.int)
         self.triangle = None  # set by `build_mesh`
@@ -600,8 +611,8 @@ class MeshConstructor:
         @brief: Ajouter des sommets/noeuds
         @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', ...] (voir POINTS_DTYPE)
         """
-        new_coord = np.empty(len(coord), dtype=MeshConstructor.POINTS_DTYPE)
-        for var in ('X', 'Y', 'Z'):  # copy existing columns
+        new_coord = np.empty(len(coord), dtype=self.points.dtype)
+        for var in ['X', 'Y'] + self.z_labels:  # copy existing columns
             new_coord[var] = coord[var]
         #FIXME: avoid copying in using np.lib.recfunctions.append_fields?
         new_coord['profil'] = profil
@@ -739,8 +750,8 @@ class MeshConstructor:
                         lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp,
                                                                   ceil(P1.distance(P2)/self.pas_trans)+1), ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
-                        coord_int = lit_int.array[['X', 'Y', 'Z']]
-                        pt_list_L1.append(self.i_pt+1)
+                        coord_int = lit_int.array[['X', 'Y'] + lit_int.z_labels]
+                        pt_list_L1.append(self.i_pt + 1)
 
                         if not first_lit:
                             # ignore le 1er point car la ligne de contrainte a déjà été traitée
@@ -760,6 +771,8 @@ class MeshConstructor:
 
     def corr_bathy_on_epis(self, epis, dist_corr_epi):
         print("~> Correction de la bathymétrie autour des épis")
+        if set(self.z_labels) != set(['Z']):
+            sys.exit('Impossible de corriger les épis sur les couches sédimentaires')
         for epi in epis:
             epi_geom = epi.coord.convert_as_linestring()
             for i, coord in enumerate(self.points):
@@ -793,18 +806,36 @@ class MeshConstructor:
         """
         /!\ Pas cohérent si constant_ech_long est différent de True
         """
+        # Export as points
+        if path.endswith('_pts.shp'):
+            w = shapefile.Writer(shapefile.POINTZ)
+            # w.field('profil', 'C', '32')
+            w.field('PK', 'N', decimal=6)
+            # w.field('dist', 'N', decimal=6)
+            for name in self.z_labels:
+                w.field(name, 'N', decimal=6)
+            for dist in np.unique(self.points['profil']):
+                pos = self.points['profil'] == dist
+                vars = self.points[pos].dtype.names
+                for row in self.points[pos]:
+                    values = {key: value for key, value in zip(vars, row)}
+                    w.point(values['X'], values['Y'], values['Z'], shapeType=shapefile.POINTZ)
+                    w.record(dist, *[values[name] for name in self.z_labels])
+            w.save(path)
+            return
+
+        # Export as lines
         lines = []
-        attributes = []
         for dist in np.unique(self.points['profil']):
             pos = self.points['profil'] == dist
             line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
+            line.add_attribute(dist)
             lines.append(line)
-            attributes.append(dist)
 
         if path.endswith('.i3s'):
             with bk.Write(path) as out_i3s:
                 out_i3s.write_header()
-                out_i3s.write_lines(lines, attributes)
+                out_i3s.write_lines(lines, line.attributes())
         elif path.endswith('.shp'):
             shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
         else:
