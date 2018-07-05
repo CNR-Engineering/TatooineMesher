@@ -4,8 +4,8 @@ Densifier des profils en travers
 import time
 
 from core.arg_command_line import MyArgParse
-from core.utils import get_axe_hydraulique
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
+from core.utils import get_axe_hydraulique
 
 
 def main(args):

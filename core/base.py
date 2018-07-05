@@ -3,7 +3,7 @@ Classes :
 * Coord
 * ProfilTravers
 * SuiteProfilsTravers
-* LignesContrainte
+* LigneContrainte
 * Lit
 * MeshConstructor
 
@@ -18,6 +18,7 @@ import os.path
 import pandas as pd
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
+from pyteltools.slf import Serafin
 import shapefile
 from shapely.geometry import LineString, Point
 import sys
@@ -28,6 +29,7 @@ from .utils import get_intersections, float_vars, strictly_increasing
 
 
 DIGITS = 4  # for csv and xml exports
+ST_SECTION_ENDING = '     999.9990     999.9990     999.9990 '
 
 
 class Coord:
@@ -127,9 +129,14 @@ class Coord:
         return LineString(self.convert_as_array())
 
     def set_layers(self, z_values):
-        self.z_labels = list(z_values.dtype.names)
-        for z_label in self.z_labels:
-            self.array = np.lib.recfunctions.append_fields(self.array, z_label, z_values[z_label], usemask=False)
+        #TODO: purge z_labels and array attributs before appending? Or refactor method to `add`
+        z_labels = list(z_values.dtype.names)
+        for z_label in z_labels:
+            self.add_single_layer(z_label, z_values[z_label])
+
+    def add_single_layer(self, name, z_array):
+        self.z_labels.append(name)
+        self.array = np.lib.recfunctions.append_fields(self.array, name, z_array, usemask=False)
 
 
 class ProfilTravers:
@@ -158,7 +165,7 @@ class ProfilTravers:
 
     def __init__(self, id, coord, z_values, label):
         """
-        Créer un profil à partir d'un semis de points ordonnés (coordonnées X,Y,Z)
+        Créer un profil à partir d'un semis de points ordonnés (coordonnées X, Y, Z)
         Aucune limite de lit n'est déclarée lorsque l'objet est créé
         """
         self.id = id
@@ -365,7 +372,49 @@ class SuiteProfilsTravers:
                 self.suite.append(ProfilTravers(last_point_id, coords, z_array, label))
             else:
                 sys.exit("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
+        elif filename.endswith('.ST'):
+            with open(filename, 'r') as filein:
+                line = filein.readline()
+                eof = False
+                while not eof:  # end-of-file reached
+                    # Read header of the cross-section profile
+                    try:
+                        profile_id_str, _, _, nb_points_str, PK_str, profile_name = line.split()
+                    except ValueError:
+                        raise GeometryRequestException('Section header not readable\n' + 'Guilty line:\n' + line)
+                    try:
+                        nb_points = int(nb_points_str)
+                        profile_id = int(profile_id_str)
+                        PK = float(PK_str)
+                    except ValueError:
+                        raise GeometryRequestException('Section header values could not be interpreted\n'
+                                                       'Guilty line:\n' + line)
 
+                    # Read coordinates of points
+                    coord = []
+                    z_list = []
+                    for i in range(nb_points):
+                        line = filein.readline()
+                        try:
+                            x, y, z = [float(v) for v in line.split()[:3]]
+                        except ValueError:
+                            raise GeometryRequestException('Coordinates are not readable\n'
+                                                           'Guilty line:\n' + line)
+                        coord.append((x, y))
+                        z_list.append((z, ))
+                    profil = ProfilTravers(profile_id, coord, np.array(z_list, dtype=float_vars('Z')), profile_name)
+
+                    # Read footer of cross-section profile
+                    line = filein.readline()
+                    if line.strip() != ST_SECTION_ENDING.strip():
+                        raise GeometryRequestException('Section footer not found (check number of points)\n'
+                                                       'Guilty line:\n' + line)
+                    self.suite.append(profil)
+
+                    # Check end-of-file, otherwise it is a new section
+                    line = filein.readline()
+                    if line == '':
+                        eof = True
         else:
             raise NotImplementedError("Seuls les formats i3s et shp sont supportés pour les profils en travers")
 
@@ -447,6 +496,22 @@ class SuiteProfilsTravers:
                 w.point(x, y, z)
                 w.record(str(profil.id), z)
         w.save(outfile_profils)
+
+    def add_constant_layer(self, name, thickness):
+        for profil in self.suite:
+            coord = profil.coord
+            coord.add_single_layer(name, coord.array['Z'] - thickness)
+
+    # def add_linear_interp_layer(self, name, PK, thickness):
+    #     if len(PK) != len(thickness):
+    #         raise GeometryRequestException('Arrays have not the same length!')
+    #     if np.any(np.ediff1d(PK) < 0):
+    #         raise GeometryRequestException('PK are not strictly in increasing')
+    #     self.nb_layers += 1
+    #     self.layer_names.append(name)
+    #     for section in self.sections:
+    #         h = np.interp(section.PK, PK, thickness, right=0, left=0)
+    #         section.add_layer(h)
 
 
 class LigneContrainte:
@@ -876,7 +941,7 @@ class MeshConstructor:
                 # Tableau des éléments (connectivité)
                 np.savetxt(fileout, self.triangle['triangles'] + 1, delimiter=' ', fmt='%i')
 
-        elif path.endswith(".xml"):
+        elif path.endswith('.xml'):
             env = Environment(
                 loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
             template = env.get_template("LandXML_template.xml")
@@ -889,5 +954,32 @@ class MeshConstructor:
             with open(path, 'w') as fileout:
                 fileout.write(template_render)
 
+        elif path.endswith('.slf'):
+
+            with Serafin.Write(path, 'fr', overwrite=True) as resout:
+                output_header = Serafin.SerafinHeader(title='%s (written by mailleurtatooine)' % os.path.basename(path),
+                                                      lang='fr')
+                output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
+
+                output_header.add_variable_from_ID('B')
+                for var_name in self.z_labels:
+                    if var_name.startswith('Z_'):
+                        output_header.add_variable_str(var_name, var_name, '')
+                resout.write_header(output_header)
+
+                values = np.empty((output_header.nb_var, output_header.nb_nodes))
+                for i, var_ID in enumerate(output_header.var_IDs):
+                    z_label = 'Z' if var_ID == 'B' else var_ID
+                    values[i, :] = self.points[z_label].reshape((1, output_header.nb_nodes))
+                resout.write_entire_frame(output_header, 0, values)
+
+            print('END')
+
         else:
             raise NotImplementedError
+
+
+class GeometryRequestException(Exception):
+    """Custom exception for geometry parser"""
+    def __init__(self, message):
+        super().__init__(message)
