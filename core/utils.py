@@ -41,7 +41,7 @@ def get_axe_hydraulique(infile_axe):
             in_i2s.read_header()
             lines = list(in_i2s.get_open_polylines())
     elif infile_axe.endswith('.shp'):
-        if shp.get_shape_type(infile_axe) not in (shapefile.POLYLINE, shapefile.POLYLINEZ):
+        if shp.get_shape_type(infile_axe) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
             sys.exit("Le fichier %s n'est pas de type POLYLINEZ" % infile_axe)
         lines = list(shp.get_open_polylines(infile_axe))
     else:
