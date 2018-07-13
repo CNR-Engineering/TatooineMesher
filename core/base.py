@@ -9,13 +9,13 @@ Classes :
 
 Remarque : les abscisses recalculées par l'outil sont identiques à celle données par le module shapely (pour les LineString).
 """
+from collections import OrderedDict
 from copy import deepcopy
 from jinja2 import Environment, FileSystemLoader
 from math import ceil
 import numpy as np
 from numpy.lib.recfunctions import append_fields
 import os.path
-import pandas as pd
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
 from pyteltools.slf import Serafin
@@ -176,8 +176,7 @@ class ProfilTravers:
         self.nb_points = len(self.coord.array)
         self.geom = LineString(coord)  # FIXME: contient toujours les points doublons
 
-        self.limites = pd.DataFrame(columns=['Xt_profil', 'Xt_ligne', 'X', 'Y', 'Z', 'id_pt'])
-        self.limites['id_pt'] = self.limites['id_pt'].astype(int)  # FIXME change dtype
+        self.limites = OrderedDict()
         self.dist_proj_axe = -1
 
     def __repr__(self):
@@ -188,15 +187,14 @@ class ProfilTravers:
         z_values = {}
         for label in self.coord.z_labels:
             z_values[label] = np.interp(Xt_profil, self.coord.array['Xt'], self.coord.array[label])
-        row = pd.DataFrame({'Xt_profil': Xt_profil, 'Xt_ligne': Xt_ligne,
-                            'X': point.x, 'Y': point.y, **z_values}, index=[id_ligne])
-        self.limites = self.limites.append(row)
+        self.limites[id_ligne] = {'Xt_profil': Xt_profil, 'Xt_ligne': Xt_ligne,
+                                  'X': point.x, 'Y': point.y, **z_values}
 
     def get_limit_by_id(self, id_ligne):
-        return self.limites.loc[id_ligne]
+        return self.limites[id_ligne]
 
     def get_Xt_lignes(self, id1, id2):
-        return tuple(self.limites.loc[[id1, id2], 'Xt_ligne'])
+        return self.get_limit_by_id(id1)['Xt_ligne'], self.get_limit_by_id(id2)['Xt_ligne']
 
     def find_and_add_limit(self, ligne_contrainte, dist_max=None):
         """
@@ -233,12 +231,16 @@ class ProfilTravers:
                                 ligne_contrainte.id, i, dist))
                             break
 
-    def common_limits(self, other):
+    def common_limits(self, limite_ids):
         """
         @brief: Liste les limites communes entre les deux profils (self et other)
-        @param other <ProfilTravers>: profil en travers amont/aval
+        @param limites
         """
-        return self.limites.index[np.in1d(self.limites.index, other.limites.index, assume_unique=True)]
+        out_limites = []
+        for limite_id in self.limites.keys():
+            if limite_id in limite_ids:
+                out_limites.append(limite_id)
+        return out_limites
 
     def extraire_lit(self, id_lit_1, id_lit_2):
         """
@@ -289,7 +291,7 @@ class ProfilTravers:
         @brief: Trie les limites par Xt croissants
         Étape nécessaire pour chercher les limites communes entre deux profils plus facilement
         """
-        self.limites = self.limites.sort_values(by='Xt_profil')
+        self.limites = OrderedDict(sorted(self.limites.items(), key=lambda x: x[1]['Xt_profil']))
 
     def calcul_nb_pts_inter(self, other, pas_long):
         """
@@ -447,10 +449,10 @@ class SuiteProfilsTravers:
             for ligne_contrainte in lignes_contraintes:
                 profil_travers.find_and_add_limit(ligne_contrainte, dist_max)
             profil_travers.sort_limites()
-            limits = list(profil_travers.limites.index)  # only to print
+            limits = profil_travers.limites.keys()  # only to print
 
             print("> {}".format(profil_travers))
-            print("{} limites trouvées avec les lignes {}".format(len(limits), limits))
+            print("{} limites trouvées avec les lignes {}".format(len(limits), list(limits)))
 
     def check_intersections(self):
         print("~> Vérifications non intersections des profils et des épis")
@@ -667,7 +669,7 @@ class MeshConstructor:
 
         self.z_labels = profils_travers[0].coord.z_labels
         self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE + float_vars(self.z_labels))
-        self.i_pt = -1
+        self.i_pt = int(-1)
         self.segments = np.empty([0, 2], dtype=np.int)
         self.triangle = None  # set by `build_mesh`
 
@@ -715,20 +717,18 @@ class MeshConstructor:
 
             # Recherche des limites communes "amont"
             if i == 0:
-                common_limites_id_1 = cur_profil.limites.index
+                common_limites_id_1 = cur_profil.limites.keys()
             else:
-                common_limites_id_1 = cur_profil.common_limits(self.profils_travers[i - 1])
+                common_limites_id_1 = cur_profil.common_limits(self.profils_travers[i - 1].limites.keys())
 
             # Recherche des limites communes "aval"
             if i == len(self.profils_travers) - 1:
-                common_limites_id_2 = cur_profil.limites.index
+                common_limites_id_2 = cur_profil.limites.keys()
             else:
-                common_limites_id_2 = cur_profil.common_limits(self.profils_travers[i + 1])
+                common_limites_id_2 = cur_profil.common_limits(self.profils_travers[i + 1].limites.keys())
 
-            # Union (non ordonnée) des limites amont/aval
-            limites_id = np.union1d(common_limites_id_1, common_limites_id_2)
-            # Ré-ordonne les limites
-            limites_id = cur_profil.limites.index[np.in1d(cur_profil.limites.index, limites_id, assume_unique=True)]
+            # Union ordonnée des limites amont/aval
+            limites_id = cur_profil.common_limits(list(set(common_limites_id_1).union(common_limites_id_2)))
 
             first_lit = True
             for j, (id1, id2) in enumerate(zip(limites_id, limites_id[1:])):
@@ -736,17 +736,17 @@ class MeshConstructor:
                 coord_int = lit.interp_along_lit_auto(self.pas_trans)
 
                 if first_lit:
-                    cur_profil.limites.loc[id1, 'id_pt'] = self.i_pt + 1
+                    cur_profil.get_limit_by_id(id1)['id_pt'] = self.i_pt + 1
                 else:
                     coord_int = coord_int[1:]
 
                 self.add_points(coord_int, profil=cur_profil.dist_proj_axe, lit=j)
 
-                cur_profil.limites.loc[id2, 'id_pt'] = self.i_pt
+                cur_profil.get_limit_by_id(id2)['id_pt'] = self.i_pt
 
                 # Ajoute les nouveaux segments
-                new_i_pt = np.arange(cur_profil.limites['id_pt'].loc[id1],
-                                     cur_profil.limites['id_pt'].loc[id2] + 1)
+                new_i_pt = np.arange(cur_profil.get_limit_by_id(id1)['id_pt'],
+                                     cur_profil.get_limit_by_id(id2)['id_pt'] + 1)
                 self.add_segments_from_node_list(new_i_pt)
 
                 if first_lit:
@@ -768,7 +768,7 @@ class MeshConstructor:
                 Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
             # Recherche des limites communes entre les deux profils
-            common_limites_id = prev_profil.common_limits(next_profil)
+            common_limites_id = prev_profil.common_limits(next_profil.limites.keys())
             print("Limites de lits communes : {}".format(list(common_limites_id)))
 
             if len(common_limites_id) < 2:
@@ -826,11 +826,13 @@ class MeshConstructor:
 
                         pt_list_L2.append(self.i_pt)
 
-                    pt_list_L2 = np.array([prev_profil.limites['id_pt'].loc[id2]] + pt_list_L2 + [next_profil.limites['id_pt'].loc[id2]])
+                    pt_list_L2 = np.array([prev_profil.get_limit_by_id(id2)['id_pt']] + pt_list_L2 +
+                                          [next_profil.get_limit_by_id(id2)['id_pt']])
                     self.add_segments_from_node_list(pt_list_L2)
 
                     if first_lit:
-                        pt_list_L1 = np.array([prev_profil.limites['id_pt'].loc[id1]] + pt_list_L1 + [next_profil.limites['id_pt'].loc[id1]])
+                        pt_list_L1 = np.array([prev_profil.get_limit_by_id(id1)['id_pt']] + pt_list_L1 +
+                                              [next_profil.get_limit_by_id(id1)['id_pt']])
                         self.add_segments_from_node_list(pt_list_L1)
                         first_lit = False
 
