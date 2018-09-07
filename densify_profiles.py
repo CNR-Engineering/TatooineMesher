@@ -8,7 +8,7 @@ from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
 from core.utils import get_axe_hydraulique
 
 
-def main(args):
+def densify_profiles(args):
     t1 = time.clock()
 
     print("~> Lecture des fichiers d'entrées")
@@ -28,17 +28,17 @@ def main(args):
 
     mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, True)
-    mesh_constr.export_profiles(args.out_profiles)
+    mesh_constr.export_profiles(args.outfile_profiles)
 
     t2 = time.clock()
     print("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
-if __name__ == '__main__':
-    parser = MyArgParse(description=__doc__)
-    parser.add_common_args()
-    args = parser.parse_args()
-    # Outputs
-    parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s)")
+parser = MyArgParse(description=__doc__)
+parser.add_common_args()
+# Outputs
+parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s)")
 
-    main(args)
+if __name__ == '__main__':
+    args = parser.parse_args()
+    densify_profiles(args)

@@ -12,12 +12,13 @@ from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
 from core.utils import get_axe_hydraulique
 
 
-def main(args):
+def linear_interpolator_and_mesher(args):
     t1 = time.clock()
 
     print("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
-    profils_travers = SuiteProfilsTravers(args.infile_profils_travers, "Profils en travers", field_id=args.attr_profils_travers)
+    profils_travers = SuiteProfilsTravers(args.infile_profils_travers, "Profils en travers",
+                                          field_id=args.attr_profils_travers)
 
     has_epi = args.infile_epis is not None and args.dist_corr_epi is not None
     if has_epi:
@@ -50,19 +51,23 @@ def main(args):
     print("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
-if __name__ == '__main__':
-    parser = MyArgParse(description=__doc__)
-    parser.add_common_args()
-    # Inputs
-    parser.add_argument("--infile_epis", help="fichier d'entrée i3s/shp avec les épis")
-    parser.add_argument("--attr_epis", help="attribute pour identifier les épis")
-    parser.add_argument("--dist_corr_epi", type=float,
-                        help="distance autour des épis (en général inférieur aux pas trans. et long.)")
-    parser.add_argument("--constant_ech_long", help="méthode de calcul du nombre de profils interpolés entre profils "
-                        "calculé par profil (constant, ie True) ou par lit (variable, ie False)", action='store_true')
-    # Outputs
-    parser.add_argument("--outfile_mesh", help="maillage en t3s")
-    parser.add_argument("--outfile_semis", help="semis en xyz")
-    args = parser.parse_args()
+parser = MyArgParse(description=__doc__)
+parser.add_common_args()
+# Inputs
+parser_epis = parser.add_argument_group('Paramètres pour la définition des épis (optionnels)')
+parser_epis.add_argument("--infile_epis", help="fichier d'entrée i3s/shp avec les épis")
+parser_epis.add_argument("--attr_epis", help="attribut pour identifier les épis")
+parser_epis.add_argument("--dist_corr_epi", type=float,
+                         help="distance autour des épis (en général inférieur aux pas trans. et long.)")
+parser.add_argument("--constant_ech_long", help="méthode de calcul du nombre de profils interpolés entre profils : "
+                    "par profil (constant, ie True) ou par lit (variable, ie False)", action='store_true')
+# Outputs
+parser_outfiles = parser.add_argument_group('Fichiers de sortie')
+parser_outfiles.add_argument("--outfile_mesh", help="maillage au format : slf (Telemac), t3s (BlueKenue),"
+                                                    " ou xml (LandXML pour ArcGIS)")
+parser_outfiles.add_argument("--outfile_semis", help="semis de points au format xyz"
+                                                     " (correspond aux noeuds du maillage")
 
-    main(args)
+if __name__ == '__main__':
+    args = parser.parse_args()
+    linear_interpolator_and_mesher(args)

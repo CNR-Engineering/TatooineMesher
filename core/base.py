@@ -864,8 +864,8 @@ class MeshConstructor:
             print("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
                 np.savetxt(fileout, self.points[['X', 'Y', 'Z']], fmt='%.4f')
-        elif path.endswith('.shp'):
-            pass
+        # elif path.endswith('.shp'):
+        #     pass  #FIXME: TODO
         else:
             raise NotImplementedError
 
@@ -889,30 +889,30 @@ class MeshConstructor:
                     w.point(values['X'], values['Y'], values['Z'], shapeType=shapefile.POINTZ)
                     w.record(dist, *[values[name] for name in self.z_labels])
             w.save(path)
-            return
 
-        # Export as lines
-        lines = []
-        for dist in np.unique(self.points['profil']):
-            pos = self.points['profil'] == dist
-            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
-            line.add_attribute(dist)
-            lines.append(line)
-
-        if path.endswith('.i3s'):
-            with bk.Write(path) as out_i3s:
-                out_i3s.write_header()
-                out_i3s.write_lines(lines, line.attributes())
-        elif path.endswith('.shp'):
-            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
         else:
-            raise NotImplementedError
+            # Export as lines
+            lines = []
+            for dist in np.unique(self.points['profil']):
+                pos = self.points['profil'] == dist
+                line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
+                line.add_attribute(dist)
+                lines.append(line)
+
+            if path.endswith('.i3s'):
+                with bk.Write(path) as out_i3s:
+                    out_i3s.write_header()
+                    out_i3s.write_lines(lines, [l.attributes()[0] for l in lines])
+            elif path.endswith('.shp'):
+                shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
+            else:
+                raise NotImplementedError
 
     def export_mesh(self, path):
         print("~> Écriture du maillage")
 
         nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
-        if path.endswith(".t3s"):
+        if path.endswith('.t3s'):
             with open(path, 'w', newline='') as fileout:
                 # Écriture en-tête
                 date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())

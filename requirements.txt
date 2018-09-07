@@ -2,3 +2,4 @@ numpy
 pyteltools
 shapely
 triangle
+-e git://github.com/CNR-Engineering/PyTelTools.git#egg=PyTelTools

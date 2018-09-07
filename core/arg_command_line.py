@@ -1,7 +1,6 @@
 """
 Custom argparse with a custom formatter_class and optional arguments
 """
-
 import argparse
 import sys
 
@@ -27,11 +26,12 @@ class MyArgParse(argparse.ArgumentParser):
                 sys.exit("Argument inconnu: '{}'".format(arg))
 
     def add_common_args(self):
-        self.add_argument("infile_axe", help="fichier d'entrée de l'axe hydraulique (i2s ou shp)")
-        self.add_argument("infile_profils_travers", help="fichier d'entrée de profils en travers (i3s ou shp)")
+        parser_infiles = self.add_argument_group("Fichiers d'entrée obligatoires")
+        parser_infiles.add_argument("infile_axe", help="fichier d'entrée de l'axe hydraulique (i2s ou shp)")
+        parser_infiles.add_argument("infile_profils_travers", help="fichier d'entrée de profils en travers (i3s ou shp)")
         self.add_argument("--infile_lignes_contraintes", help="fichier d'entrée de lignes de contrainte (i2s ou shp)")
         self.add_argument("--attr_profils_travers", help="attribut pour identifier les profils en travers")
-        self.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal en mètre", default=5)
-        self.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal en mètre", default=3.5)
+        self.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)", default=5)
+        self.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)", default=3.5)
         self.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                          "pour les limites de lits (en m)", default=0.01)
