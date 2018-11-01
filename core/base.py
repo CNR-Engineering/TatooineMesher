@@ -29,6 +29,7 @@ from .utils import get_intersections, float_vars, strictly_increasing
 
 
 DIGITS = 4  # for csv and xml exports
+LANG = 'fr'  # for variable names
 ST_SECTION_ENDING = '     999.9990     999.9990     999.9990 '
 
 
@@ -648,9 +649,13 @@ class MeshConstructor:
     MeshConstructor: données pour construire un maillage
 
     ### Attributs
+    - profils_travers
+    - pas_trans
+    - z_labels
     - points
     - i_pt <int> (curseur pour répérer l'avancement)
     - segments
+    - triangle
 
     ### Méthodes
     - add_points
@@ -958,9 +963,9 @@ class MeshConstructor:
 
         elif path.endswith('.slf'):
 
-            with Serafin.Write(path, 'fr', overwrite=True) as resout:
+            with Serafin.Write(path, LANG, overwrite=True) as resout:
                 output_header = Serafin.SerafinHeader(title='%s (written by mailleurtatooine)' % os.path.basename(path),
-                                                      lang='fr')
+                                                      lang=LANG)
                 output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
 
                 output_header.add_variable_from_ID('B')
@@ -974,8 +979,6 @@ class MeshConstructor:
                     z_label = 'Z' if var_ID == 'B' else var_ID
                     values[i, :] = self.points[z_label].reshape((1, output_header.nb_nodes))
                 resout.write_entire_frame(output_header, 0, values)
-
-            print('END')
 
         else:
             raise NotImplementedError

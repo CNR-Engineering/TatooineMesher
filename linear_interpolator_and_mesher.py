@@ -13,7 +13,7 @@ from core.utils import get_axe_hydraulique
 
 
 def linear_interpolator_and_mesher(args):
-    t1 = time.clock()
+    t1 = time.process_time()
 
     print("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
@@ -47,7 +47,7 @@ def linear_interpolator_and_mesher(args):
         mesh_constr.build_mesh()
         mesh_constr.export_mesh(args.outfile_mesh)
 
-    t2 = time.clock()
+    t2 = time.process_time()
     print("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
