@@ -84,7 +84,7 @@ linear_interpolator_and_mesher.py axe.i2s profils.i3s --pas_long 6 --pas_trans 4
 
 Sans lignes de contrainte  | Avec lignes de contrainte
 -------------------------- | -------------------------
-![Illustration A](media/lim_with_hardlines.png) | ![Illustration B](media/lim_without_hardlines.png)
+![Illustration A](media/lim_without_hardlines.png) | ![Illustration B](media/lim_with_hardlines.png)
 
 ### Description des quelques arguments particuliers
 Les arguments `attr_profils_travers` et `attr_epis` permettent de définir l'attribut à utiliser pour identifier
@@ -96,7 +96,7 @@ Si ces arguments ne sont pas renseignés, les objets sont simplement numéros à
 L'outil `linear_interpolator_and_mesher.py` dispose de l'argument `--constant_ech_long` pour spécifier comment les
 points intermédiaires (entre 2 profils) sont ajoutés.
 Si cet argument est renseigné, l'outil ajoutera un nombre de points constant longitudinalement.
-Ainsi les points en sortie correspondront aux profils que le densificateur de profils aurait calculés. 
+Ainsi les points en sortie correspondront aux profils que le densificateur de profils aurait calculés.
 
 ## TODO
 * read "lignes contraintes" from ST files
