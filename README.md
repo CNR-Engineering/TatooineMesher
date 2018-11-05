@@ -68,6 +68,8 @@ Voici un exemple :
 densify_profiles.py -h
 ```
 
+![Illustration densificateur](media/densifier.png)
+
 ### Densificateur de profils
 Exemple d'utilisation basique :
 ```bash
@@ -79,6 +81,10 @@ Exemple d'utilisation basique :
 ```bash
 linear_interpolator_and_mesher.py axe.i2s profils.i3s --pas_long 6 --pas_trans 4 --outfile_semis semis.shp --outfile_mesh maillage.slf
 ```
+
+Sans lignes de contrainte  | Avec lignes de contrainte
+-------------------------- | -------------------------
+![Illustration A](media/lim_with_hardlines.png) | ![Illustration B](media/lim_without_hardlines.png)
 
 ### Description des quelques arguments particuliers
 Les arguments `attr_profils_travers` et `attr_epis` permettent de définir l'attribut à utiliser pour identifier
