@@ -20,7 +20,8 @@ from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
 from pyteltools.slf import Serafin
 import shapefile
-from shapely.geometry import LineString, Point
+import shapely.affinity as aff
+from shapely.geometry import LineString, MultiPoint, Point
 import sys
 import time
 import triangle
@@ -205,15 +206,18 @@ class ProfilTravers:
         if self.geom.intersects(ligne_contrainte.geom):
             intersection = self.geom.intersection(ligne_contrainte.geom)
 
+            if isinstance(intersection, MultiPoint):
+                print("WARN: L'intersection entre '{}' et '{}' contient plusieurs points, seul le premier est gardé.".format(
+                    self, ligne_contrainte))
+                intersection = intersection[0]
             if isinstance(intersection, Point):
                 # Calcul des projections
                 Xt_profil = self.geom.project(intersection)
                 Xt_ligne = ligne_contrainte.geom.project(intersection)
                 self._add_limit(ligne_contrainte.id, Xt_profil, Xt_ligne, intersection)
             else:
-                sys.exit("L'intersection entre '{}' et '{}' ne correspond pas à un point unique (type = {})".format(
-                    self, ligne_contrainte, type(intersection)))
-
+                sys.exit("L'intersection entre '{}' et '{}' ne correspond pas rien!".format(
+                    self, ligne_contrainte))
         else:
             distance = self.geom.distance(ligne_contrainte.geom)
             if dist_max is not None:
@@ -331,27 +335,35 @@ class SuiteProfilsTravers:
     - find_and_add_limits
     - calculer_dist_proj_axe
     """
-    def __init__(self, filename, label, field_id=None):
+
+    def __init__(self):
         self.suite = []
+
+    def add_profile(self, profile):
+        self.suite.append(profile)
+
+    @staticmethod
+    def from_file(filename, label, field_id=None):
+        profils_travers = SuiteProfilsTravers()
         if filename.endswith('.i3s'):
             with bk.Read(filename) as in_i3s:
                 in_i3s.read_header()
                 for i, line in enumerate(in_i3s.get_open_polylines()):
                     line_id = i if field_id is None else line.attributes()[0]  # Use `Value` if field is not None
-                    z_array = np.array([(coord[2], ) for coord in line.polyline().coords], dtype=float_vars('Z'))
+                    z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars('Z'))
                     if line.to_2d:
                         line = line.to_2d()
-                    self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
+                    profils_travers.add_profile(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
         elif filename.endswith('.shp'):
             shp_type = shp.get_shape_type(filename)
             if shp_type in (shapefile.POLYLINEZ, shapefile.POLYLINEM):
                 field_id_index = get_field_index(filename, field_id)
                 for i, line in enumerate(shp.get_open_polylines(filename)):
                     line_id = i if field_id is None else line.attributes()[field_id_index]
-                    z_array = np.array([(coord[2], ) for coord in line.polyline().coords], dtype=float_vars('Z'))
+                    z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars('Z'))
                     if line.to_2d:
                         line = line.to_2d()
-                    self.suite.append(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
+                    profils_travers.add_profile(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
             elif shp_type == shapefile.POINTZ:
                 field_id_index = get_field_index(filename, field_id)
                 field_indexes, field_names = [], []
@@ -366,13 +378,13 @@ class SuiteProfilsTravers:
                     point_id = i if field_id is None else attributes[field_id_index]
                     if i > 0 and point_id != last_point_id:
                         z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
-                        self.suite.append(ProfilTravers(last_point_id, coords, z_array, label))
+                        profils_travers.add_profile(ProfilTravers(last_point_id, coords, z_array, label))
                         coords, z_layers = [], []
                     coords.append(point[:2])
                     z_layers.append((point[2],) + tuple(attributes[index] for index in field_indexes))
                     last_point_id = point_id
                 z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
-                self.suite.append(ProfilTravers(last_point_id, coords, z_array, label))
+                profils_travers.add_profile(ProfilTravers(last_point_id, coords, z_array, label))
             else:
                 sys.exit("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
         elif filename.endswith('.ST'):
@@ -404,7 +416,7 @@ class SuiteProfilsTravers:
                             raise GeometryRequestException('Coordinates are not readable\n'
                                                            'Guilty line:\n' + line)
                         coord.append((x, y))
-                        z_list.append((z, ))
+                        z_list.append((z,))
                     profil = ProfilTravers(profile_id, coord, np.array(z_list, dtype=float_vars('Z')), profile_name)
 
                     # Read footer of cross-section profile
@@ -412,14 +424,15 @@ class SuiteProfilsTravers:
                     if line.strip() != ST_SECTION_ENDING.strip():
                         raise GeometryRequestException('Section footer not found (check number of points)\n'
                                                        'Guilty line:\n' + line)
-                    self.suite.append(profil)
+                    profils_travers.add_profile(profil)
 
                     # Check end-of-file, otherwise it is a new section
                     line = filein.readline()
                     if line == '':
                         eof = True
         else:
-            raise NotImplementedError("Seuls les formats i3s et shp sont supportés pour les profils en travers")
+            raise NotImplementedError("Seuls les formats i3s, shp et ST sont supportés pour les profils en travers")
+        return profils_travers
 
     def __add__(self, other):
         newsuite = deepcopy(self)
@@ -478,10 +491,10 @@ class SuiteProfilsTravers:
                 if isinstance(intersection, Point):
                     profil.dist_proj_axe = axe_geom.project(intersection)
                 else:
-                    sys.exit("L'intersection entre le '{}' et l'axe hydraulique n'est pas un point unique".format(profil))
+                    sys.exit("ERREUR: L'intersection entre le '{}' et l'axe hydraulique n'est pas un point unique".format(profil))
             else:
                 print(list(profil.geom.coords))
-                sys.exit("ERREUR: Le '{}' n'intersection pas l'axe".format(profil))
+                print("ERREUR: '{}' n'intersecte pas l'axe".format(profil))
 
     def sort_by_dist(self):
         self.suite = sorted(self.suite, key=lambda x: x.dist_proj_axe)
@@ -533,7 +546,7 @@ class LigneContrainte:
         """
         Création d'un objet LigneContrainte à partir des coordoonées de la ligne
         coord: liste de tuples (de taille 2)
-          Ex: [(x1,y1), (x2,y2), ..., (xn,yn)]
+          Ex: [(x1, y1), (x2, y2), ..., (xn, yn)]
         """
         self.id = id
         self.nb_points = len(coord)
@@ -651,8 +664,8 @@ class MeshConstructor:
     ### Attributs
     - profils_travers
     - pas_trans
-    - z_labels
-    - points
+    - z_labels: variables
+    - points: 2D-array with columns ['X', 'Y', 'profil', 'lit'] + z_labels
     - i_pt <int> (curseur pour répérer l'avancement)
     - segments
     - triangle
@@ -662,6 +675,7 @@ class MeshConstructor:
     - add_segments
     - add_segments_from_node_list
     - export_as_dict
+    - add_submesh
 
     /!\ Les éléments sont numérotés à partir de 0
       (dans le tableau segments)
@@ -868,9 +882,21 @@ class MeshConstructor:
         if path.endswith('.xyz'):
             print("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                np.savetxt(fileout, self.points[['X', 'Y', 'Z']], fmt='%.4f')
-        # elif path.endswith('.shp'):
-        #     pass  #FIXME: TODO
+                np.savetxt(fileout, self.points[['X', 'Y', 'Z']]) #, fmt='%.4f')
+        elif path.endswith('.shp'):
+            print("~> Exports en shp des points")
+            w = shapefile.Writer(shapefile.POINTZ)
+            w.field('PK', 'N', decimal=6)
+            for name in self.z_labels:
+                w.field(name, 'N', decimal=6)
+            for dist in np.unique(self.points['profil']):
+                pos = self.points['profil'] == dist
+                vars = self.points[pos].dtype.names
+                for row in self.points[pos]:
+                    values = {key: value for key, value in zip(vars, row)}
+                    w.point(values['X'], values['Y'], values['Z'], shapeType=shapefile.POINTZ)
+                    w.record(dist, *[values[name] for name in self.z_labels])
+            w.save(path)
         else:
             raise NotImplementedError
 
