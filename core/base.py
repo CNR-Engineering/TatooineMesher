@@ -954,7 +954,7 @@ class MeshConstructor:
 #
 :Application              BlueKenue
 :Version                  3.3.4
-:WrittenBy                mailleurtatooine
+:WrittenBy                tatooinemesher
 :CreationDate             {}
 #
 #------------------------------------------------------------------------
@@ -990,7 +990,7 @@ class MeshConstructor:
         elif path.endswith('.slf'):
 
             with Serafin.Write(path, LANG, overwrite=True) as resout:
-                output_header = Serafin.SerafinHeader(title='%s (written by mailleurtatooine)' % os.path.basename(path),
+                output_header = Serafin.SerafinHeader(title='%s (written by tatooinemesher)' % os.path.basename(path),
                                                       lang=LANG)
                 output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
 

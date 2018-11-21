@@ -1,5 +1,5 @@
-Mailleur Tatooine
-=================
+Tatooine Mesher
+===============
 
 > Interpolateur linéaire et mailleur à partir de **profils en travers** et de lignes de contraintes
 
