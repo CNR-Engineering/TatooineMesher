@@ -1,5 +1,6 @@
 jinja2
 numpy
+pyshp>=2.0
 shapely
 triangle
 -e git://github.com/CNR-Engineering/PyTelTools.git#egg=PyTelTools

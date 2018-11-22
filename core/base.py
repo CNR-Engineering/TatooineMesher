@@ -20,7 +20,6 @@ from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
 from pyteltools.slf import Serafin
 import shapefile
-import shapely.affinity as aff
 from shapely.geometry import LineString, MultiPoint, Point
 import sys
 import time
@@ -60,7 +59,7 @@ class Coord:
                 self.z_labels.append(var)
 
         if 'X' not in vars and 'Y' not in vars:
-            sys.exit("Columns X and Y are compulsary. Following columns were found: {}".format(vars))
+            sys.exit("Columns X and Y are compulsory. Following columns were found: {}".format(vars))
 
         if 'Xt' in vars2add:
             self.compute_Xt()
@@ -504,14 +503,14 @@ class SuiteProfilsTravers:
         Write a shapefile with 3D Points
         @param outfile_profils <str>: output file name
         """
-        w = shp.MyWriter(shapeType=shapefile.POINTZ)
-        w.field('profil_id', 'C')
-        w.field('Z', 'N', decimal=6)
-        for profil in self.suite:
-            for (x, y, z) in list(profil.geom.coords):
-                w.point(x, y, z)
-                w.record(str(profil.id), z)
-        w.save(outfile_profils)
+        with shapefile.Writer(outfile_profils, shapeType=shapefile.POINTZ) as w:
+            w.field('profil_id', 'C')
+            w.field('Z', 'N', decimal=6)
+            for profil in self.suite:
+                array = profil.coord.array
+                for row in array:
+                    w.pointz(row['X'], row['Y'], row['Z'])
+                    w.record(profil_id=str(profil.id), Z=row['Z'])
 
     def add_constant_layer(self, name, thickness):
         for profil in self.suite:
@@ -882,21 +881,20 @@ class MeshConstructor:
         if path.endswith('.xyz'):
             print("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                np.savetxt(fileout, self.points[['X', 'Y', 'Z']]) #, fmt='%.4f')
+                np.savetxt(fileout, self.points[['X', 'Y', 'Z']])  #, fmt='%.4f')
         elif path.endswith('.shp'):
             print("~> Exports en shp des points")
-            w = shapefile.Writer(shapefile.POINTZ)
-            w.field('PK', 'N', decimal=6)
-            for name in self.z_labels:
-                w.field(name, 'N', decimal=6)
-            for dist in np.unique(self.points['profil']):
-                pos = self.points['profil'] == dist
-                vars = self.points[pos].dtype.names
-                for row in self.points[pos]:
-                    values = {key: value for key, value in zip(vars, row)}
-                    w.point(values['X'], values['Y'], values['Z'], shapeType=shapefile.POINTZ)
-                    w.record(dist, *[values[name] for name in self.z_labels])
-            w.save(path)
+            with shapefile.Writer(path, shapeType=shapefile.POINTZ) as w:
+                w.field('PK', 'N', decimal=6)
+                for name in self.z_labels:
+                    w.field(name, 'N', decimal=6)
+                for dist in np.unique(self.points['profil']):
+                    pos = self.points['profil'] == dist
+                    vars = self.points[pos].dtype.names
+                    for row in self.points[pos]:
+                        values = {key: value for key, value in zip(vars, row)}
+                        w.pointz(values['X'], values['Y'], values['Z'])
+                        w.record(dist, *[values[name] for name in self.z_labels])
         else:
             raise NotImplementedError
 
@@ -904,40 +902,21 @@ class MeshConstructor:
         """
         /!\ Pas cohérent si constant_ech_long est différent de True
         """
-        # Export as points
-        if path.endswith('_pts.shp'):
-            w = shapefile.Writer(shapefile.POINTZ)
-            # w.field('profil', 'C', '32')
-            w.field('PK', 'N', decimal=6)
-            # w.field('dist', 'N', decimal=6)
-            for name in self.z_labels:
-                w.field(name, 'N', decimal=6)
-            for dist in np.unique(self.points['profil']):
-                pos = self.points['profil'] == dist
-                vars = self.points[pos].dtype.names
-                for row in self.points[pos]:
-                    values = {key: value for key, value in zip(vars, row)}
-                    w.point(values['X'], values['Y'], values['Z'], shapeType=shapefile.POINTZ)
-                    w.record(dist, *[values[name] for name in self.z_labels])
-            w.save(path)
+        lines = []
+        for dist in np.unique(self.points['profil']):
+            pos = self.points['profil'] == dist
+            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
+            line.add_attribute(dist)
+            lines.append(line)
 
+        if path.endswith('.i3s'):
+            with bk.Write(path) as out_i3s:
+                out_i3s.write_header()
+                out_i3s.write_lines(lines, [l.attributes()[0] for l in lines])
+        elif path.endswith('.shp'):
+            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
         else:
-            # Export as lines
-            lines = []
-            for dist in np.unique(self.points['profil']):
-                pos = self.points['profil'] == dist
-                line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
-                line.add_attribute(dist)
-                lines.append(line)
-
-            if path.endswith('.i3s'):
-                with bk.Write(path) as out_i3s:
-                    out_i3s.write_header()
-                    out_i3s.write_lines(lines, [l.attributes()[0] for l in lines])
-            elif path.endswith('.shp'):
-                shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
-            else:
-                raise NotImplementedError
+            raise NotImplementedError
 
     def export_mesh(self, path):
         print("~> Écriture du maillage")
