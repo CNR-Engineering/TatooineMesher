@@ -3,4 +3,5 @@ numpy
 pyshp>=2.0
 shapely
 triangle
+-e git://github.com/CNR-Engineering/Crue10_tools.git#egg=Crue10_tools
 -e git://github.com/CNR-Engineering/PyTelTools.git#egg=PyTelTools
