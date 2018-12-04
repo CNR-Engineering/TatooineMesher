@@ -7,8 +7,6 @@ from crue10.emh.section import SectionIdem, SectionProfil
 from crue10.emh.submodel import SubModel
 from crue10.utils import CrueError, logger
 import numpy as np
-from shapely.affinity import translate
-from shapely.geometry import Point
 import sys
 
 from core.arg_command_line import MyArgParse
@@ -40,43 +38,13 @@ def mesh_crue10_submodel_bathy(args):
     # - merge branches at transitions "SectionIdem/SectionProfil"
     # - generate trace of ProfilIdem
 
-    if SHIFT_TRACE_TO_EXTERMITY:
-        # Shift first trace at branch origin (usual biais is about 15.039 m)
-        for i, branche in enumerate(model.iter_on_branches()):
-            for pos in (0, -1):
-                section = branche.sections[pos]
-                if isinstance(section, SectionProfil):
-                    if pos == 0:
-                        node = branche.noeud_amont.geom
-                    else:
-                        node = branche.noeud_aval.geom
-                    section_point = section.geom_trace.intersection(branche.geom)
-                    if isinstance(section_point, Point):
-                        dx = node.x - section_point.x
-                        dy = node.y - section_point.y
-                        model.branches[branche.id].sections[pos].set_trace(
-                            translate(section.geom_trace, xoff=dx, yoff=dy))
-
     for branche in model.iter_on_branches():
-        for j, section in enumerate(branche.sections):
-            if isinstance(section, SectionIdem):
-                if j == 0 or j == len(branche.sections) - 1:
-                    # Determine node name at junction
-                    nom_noeud = branche.noeud_amont.id if j == 0 else branche.noeud_aval.id
+        branche.normalize_sections_xp()
+        if SHIFT_TRACE_TO_EXTERMITY:
+            branche.shift_sectionprofil_to_extremity()
 
-                    # Check if any adjacent branchs has this section
-                    branches = model.connected_branches(nom_noeud)
-                    branches.remove(branche)
-                    if branches:
-                        for br in branches:
-                            section_pos = 0 if br.noeud_amont.id == nom_noeud else -1
-                            section_at_node = br.sections[section_pos]
-                            if section_at_node is section.section_ori:
-                                branche.sections[j] = section.set_as_profil(section_at_node, section.dz)
-                            else:
-                                pass  # TODO: build trace
-                else:
-                    pass  #TODO: build trace
+    model.convert_sectionidem_to_sectionprofil()
+    # model.write_shp_active_trace('export_tracesSections.shp')  # DEBUG
 
     triangles = {}
     mesh_constr = None
@@ -108,8 +76,8 @@ def mesh_crue10_submodel_bathy(args):
                 if args.outfile_mesh is not None:
                     mesh_constr.build_mesh()
                     if len(mesh_constr.points) != len(mesh_constr.triangle['vertices']):
-                        print("ERROR: Mesh is corrupted... %i vs %i nodes" % (
-                              len(mesh_constr.points), len(mesh_constr.triangle['vertices'])))
+                        raise TatooineException("Mesh is corrupted... %i vs %i nodes" % (
+                                                len(mesh_constr.points), len(mesh_constr.triangle['vertices'])))
                     else:
                         if not triangles:  # set initial values from first iteration
                             points = mesh_constr.points
@@ -121,10 +89,11 @@ def mesh_crue10_submodel_bathy(args):
                                 (triangles['triangles'], triangles['vertices'].shape[0] + mesh_constr.triangle['triangles']))
                             triangles['vertices'] = np.vstack((triangles['vertices'], mesh_constr.triangle['vertices']))
             else:
-                logger.info("Branche ignorée")
-            logger.info("\n\n")
+                logger.info("Branche ignorée par manque de sections")
         except TatooineException as e:
+            logger.critical("/!\ Branche ignorée à cause d'une erreur bloquante :")
             logger.critical(e.message)
+        logger.info("\n")
 
     mesh_constr.points = points
     mesh_constr.triangle = triangles
