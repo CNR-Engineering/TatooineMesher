@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Densifier des profils en travers
 """
@@ -5,13 +6,13 @@ import time
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
-from core.utils import get_axe_hydraulique
+from core.utils import get_axe_hydraulique, logger, TatooineException
 
 
 def densify_profiles(args):
     t1 = time.clock()
 
-    print("~> Lecture des fichiers d'entrées")
+    logger.info("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
     profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
                                                     field_id=args.attr_profils_travers)
@@ -32,7 +33,7 @@ def densify_profiles(args):
     mesh_constr.export_profiles(args.outfile_profiles)
 
     t2 = time.clock()
-    print("=> le temps d'execution est de : {}s".format(t2-t1))
+    logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
 parser = MyArgParse(description=__doc__)
@@ -42,4 +43,7 @@ parser.add_argument("outfile_profiles", help="fichier de sortie contenant les pr
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    densify_profiles(args)
+    try:
+        densify_profiles(args)
+    except TatooineException as e:
+        logger.critical(e.message)

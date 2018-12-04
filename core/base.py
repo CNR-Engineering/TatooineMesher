@@ -21,11 +21,10 @@ from pyteltools.geom import geometry
 from pyteltools.slf import Serafin
 import shapefile
 from shapely.geometry import LineString, MultiPoint, Point
-import sys
 import time
 import triangle
 
-from .utils import get_intersections, float_vars, strictly_increasing
+from .utils import float_vars, get_intersections, logger, strictly_increasing, TatooineException
 
 
 DIGITS = 4  # for csv and xml exports
@@ -59,7 +58,7 @@ class Coord:
                 self.z_labels.append(var)
 
         if 'X' not in vars and 'Y' not in vars:
-            sys.exit("Columns X and Y are compulsory. Following columns were found: {}".format(vars))
+            raise TatooineException("Columns X and Y are compulsory. Following columns were found: {}".format(vars))
 
         if 'Xt' in vars2add:
             self.compute_Xt()
@@ -68,7 +67,7 @@ class Coord:
 
         if remove_duplicates:
             if not strictly_increasing(self.array['Xt']):
-                print("ATTENTION : Des points doublons sont éliminés")
+                logger.warn("Des points doublons sont éliminés")
                 # Suppression des doublons (points superposés dans la polyligne)
                 points_a_conserver = np.ediff1d(self.array['Xt'], to_begin=1.) != 0.
                 self.array = self.array[points_a_conserver]
@@ -117,8 +116,8 @@ class Coord:
             Xp[i] = trace.project(point)
 
         if not strictly_increasing(Xp):
-            sys.exit("L'abscisse projetée n'est pas strictement croissante le long du profil."
-                     "Le profil n'est pas suffisamment droit...")
+            raise TatooineException("L'abscisse projetée n'est pas strictement croissante le long du profil. "
+                                    "Le profil n'est pas suffisamment droit...")
 
         xp = Xp/Xp[-1]
         self.array = append_fields(self.array, 'xp', xp, usemask=False)
@@ -206,8 +205,8 @@ class ProfilTravers:
             intersection = self.geom.intersection(ligne_contrainte.geom)
 
             if isinstance(intersection, MultiPoint):
-                print("WARN: L'intersection entre '{}' et '{}' contient plusieurs points, seul le premier est gardé.".format(
-                    self, ligne_contrainte))
+                logger.warn("L'intersection entre '{}' et '{}' contient plusieurs points, "
+                            "seul le premier est gardé.".format(self, ligne_contrainte))
                 intersection = intersection[0]
             if isinstance(intersection, Point):
                 # Calcul des projections
@@ -215,11 +214,11 @@ class ProfilTravers:
                 Xt_ligne = ligne_contrainte.geom.project(intersection)
                 self._add_limit(ligne_contrainte.id, Xt_profil, Xt_ligne, intersection)
             else:
-                sys.exit("L'intersection entre '{}' et '{}' ne correspond pas rien!".format(
+                raise TatooineException("L'intersection entre '{}' et '{}' ne correspond pas rien!".format(
                     self, ligne_contrainte))
         else:
-            distance = self.geom.distance(ligne_contrainte.geom)
             if dist_max is not None:
+                distance = self.geom.distance(ligne_contrainte.geom)
                 if distance < dist_max:
                     # Test de proximité avec tous les points de la ligne de contrainte
                     for i, coord in enumerate(ligne_contrainte.coord):
@@ -231,8 +230,8 @@ class ProfilTravers:
                             Xt_profil = self.geom.project(point)
                             intersection = self.geom.interpolate(Xt_profil)
                             self._add_limit(ligne_contrainte.id, Xt_profil, Xt_ligne, intersection)
-                            print("Ajout de la limite avec la ligne {} après {} itérations (distance = {})".format(
-                                ligne_contrainte.id, i, dist))
+                            logger.debug("Ajout de la limite avec la ligne {} après {} itérations (distance = {})"
+                                         .format(ligne_contrainte.id, i, dist))
                             break
 
     def common_limits(self, limite_ids):
@@ -261,7 +260,8 @@ class ProfilTravers:
 
         # Vérifie que les Xt sont croissants du id_lit_1 au id_lit_2
         if Xt1 > Xt2:
-            sys.exit("L'ordre des lits ({}, {}) n'est pas par Xt croissant pour le {}".format(id_lit_1, id_lit_2, self))
+            raise TatooineException("L'ordre des lits ({}, {}) n'est pas par Xt croissant pour le {}".format(
+                id_lit_1, id_lit_2, self))
 
         Xt_profil = self.coord.array['Xt']
         sub_coord = self.coord.array[np.logical_and(Xt_profil >= Xt1, Xt_profil <= Xt2)]
@@ -280,11 +280,11 @@ class ProfilTravers:
 
         # Vérification de l'ordre des points
         if not strictly_increasing(sub_coord['Xt']):
-            print("/!\ Les Xt ne sont pas strictement croissants")  #FIXME: It should not append
-            print(sub_coord['Xt'])
-            print("Veuillez vérifier ci-dessus, avec les limites suivantes :")
-            print(limit1)
-            print(limit2)
+            logger.debug("/!\ Les Xt ne sont pas strictement croissants")  # FIXME: It should not append
+            logger.debug(sub_coord['Xt'])
+            logger.debug("Veuillez vérifier ci-dessus, avec les limites suivantes :")
+            logger.debug(limit1)
+            logger.debug(limit2)
             points_a_conserver = np.ediff1d(sub_coord['Xt'], to_begin=1.) != 0.
             sub_coord = sub_coord[points_a_conserver]
 
@@ -320,7 +320,7 @@ def get_field_index(filename, field_id):
         try:
             return names.index(field_id)
         except ValueError:
-            sys.exit("Le champ `%s` n'existe pas" % field_id)
+            raise TatooineException("Le champ `%s` n'existe pas" % field_id)
 
 
 class SuiteProfilsTravers:
@@ -370,7 +370,6 @@ class SuiteProfilsTravers:
                     if name.startswith('Z'):
                         field_indexes.append(index)
                         field_names.append(name)
-                print('Variables : %s' % field_names)
                 coords, z_layers = [], []
                 last_point_id = None
                 for i, (point, attributes) in enumerate(shp.get_points(filename, with_z=True)):
@@ -385,7 +384,7 @@ class SuiteProfilsTravers:
                 z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
                 profils_travers.add_profile(ProfilTravers(last_point_id, coords, z_array, label))
             else:
-                sys.exit("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
+                raise TatooineException("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
         elif filename.endswith('.ST'):
             with open(filename, 'r') as filein:
                 line = filein.readline()
@@ -393,13 +392,12 @@ class SuiteProfilsTravers:
                 while not eof:  # end-of-file reached
                     # Read header of the cross-section profile
                     try:
-                        profile_id_str, _, _, nb_points_str, PK_str, profile_name = line.split()
+                        profile_id_str, _, _, nb_points_str, _, profile_name = line.split()
                     except ValueError:
                         raise GeometryRequestException('Section header not readable\n' + 'Guilty line:\n' + line)
                     try:
                         nb_points = int(nb_points_str)
                         profile_id = int(profile_id_str)
-                        PK = float(PK_str)
                     except ValueError:
                         raise GeometryRequestException('Section header values could not be interpreted\n'
                                                        'Guilty line:\n' + line)
@@ -455,34 +453,34 @@ class SuiteProfilsTravers:
     def find_and_add_limits(self, lignes_contraintes, dist_max):
         """
         @param lignes_contraintes <[LigneContrainte]>: lignes de contraintes
-        @param dist_max <float>:
+        @param dist_max <float>: distance de tolérance pour détecter des intersections
         """
-        print("~> Recherche des limites de lits")
+        logger.info("~> Recherche des limites de lits")
         for i, profil_travers in enumerate(self):
             for ligne_contrainte in lignes_contraintes:
                 profil_travers.find_and_add_limit(ligne_contrainte, dist_max)
             profil_travers.sort_limites()
             limits = profil_travers.limites.keys()  # only to print
 
-            print("> {}".format(profil_travers))
-            print("{} limites trouvées avec les lignes {}".format(len(limits), list(limits)))
+            logger.debug("> {}".format(profil_travers))
+            logger.debug("{} limites trouvées avec les lignes {}".format(len(limits), list(limits)))
 
     def check_intersections(self):
-        print("~> Vérifications non intersections des profils et des épis")
+        logger.info("~> Vérifications non intersections des profils et des épis")
         intersections = get_intersections([profil.geom for profil in self])
         if intersections:
-            print("Les intersections suivantes sont trouvées")
+            logger.debug("Les intersections suivantes sont trouvées")
             for (i, j) in intersections:
-                print("- entre '{}' et '{}'".format(self[i], self[j]))
-            sys.exit("ERREUR: Des profils s'intersectent")
+                logger.debug("- entre '{}' et '{}'".format(self[i], self[j]))
+            raise TatooineException("Des profils s'intersectent")
 
-    def compute_dist_proj_axe(self, axe_geom):
+    def compute_dist_proj_axe(self, axe_geom, dist_max):
         """
         @brief: Calculer la distance projetée sur l'axe
-        @param axe_geom <shapely.geometry.LineString>: axe hydraulique
-        /!\ Orientation de l'axe
+        @param axe_geom <shapely.geometry.LineString>: axe hydraulique (/!\ Orientation de l'axe)
+        @param dist_max <float>: distance de tolérance pour détecter des intersections
         """
-        print("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
+        logger.info("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
         for profil in self:
             profil_geom = profil.geom
             if profil_geom.intersects(axe_geom):
@@ -490,10 +488,17 @@ class SuiteProfilsTravers:
                 if isinstance(intersection, Point):
                     profil.dist_proj_axe = axe_geom.project(intersection)
                 else:
-                    sys.exit("ERREUR: L'intersection entre le '{}' et l'axe hydraulique n'est pas un point unique".format(profil))
+                    raise TatooineException("L'intersection entre le '{}' et l'axe hydraulique "
+                                            "n'est pas un point unique".format(profil))
             else:
-                print(list(profil.geom.coords))
-                print("ERREUR: '{}' n'intersecte pas l'axe".format(profil))
+                if dist_max is not None:
+                    for pos in (0, -1):
+                        dist = profil_geom.distance(Point(axe_geom.coords[pos]))
+                        if dist < dist_max:
+                            profil.dist_proj_axe = 0.0 if pos == 0 else axe_geom.length
+            if profil.dist_proj_axe == -1:
+                raise TatooineException("'{}' n'intersecte pas l'axe (distance = {}m)".format(
+                                        profil, profil.geom.distance(axe_geom)))
 
     def sort_by_dist(self):
         self.suite = sorted(self.suite, key=lambda x: x.dist_proj_axe)
@@ -570,7 +575,7 @@ class LigneContrainte:
                         lines.append(LigneContrainte(i, list(line.polyline().coords)))
             elif filename.endswith('.shp'):
                 if shp.get_shape_type(filename) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
-                    sys.exit("Le fichier %s n'est pas de type POLYLINE[ZM]" % filename)
+                    raise TatooineException("Le fichier %s n'est pas de type POLYLINE[ZM]" % filename)
                 for i, line in enumerate(shp.get_open_polylines(filename)):
                     lines.append(LigneContrainte(i, list(line.polyline().coords)))
             else:
@@ -699,7 +704,7 @@ class MeshConstructor:
         new_coord = np.empty(len(coord), dtype=self.points.dtype)
         for var in ['X', 'Y'] + self.z_labels:  # copy existing columns
             new_coord[var] = coord[var]
-        #FIXME: avoid copying in using np.lib.recfunctions.append_fields?
+        # FIXME: avoid copying in using np.lib.recfunctions.append_fields?
         new_coord['profil'] = profil
         new_coord['lit'] = lit
         self.i_pt += len(new_coord)
@@ -728,10 +733,11 @@ class MeshConstructor:
                 'segments': self.segments}
 
     def build_initial_profiles(self):
-        print("~> Interpolation sur les profils existants en prenant en compte le passage des lignes de contraintes")
+        logger.info("~> Interpolation sur les profils existants en prenant en compte "
+                    "le passage des lignes de contraintes")
         for i in range(len(self.profils_travers)):
             cur_profil = self.profils_travers[i]
-            print(cur_profil)
+            logger.debug(cur_profil)
 
             # Recherche des limites communes "amont"
             if i == 0:
@@ -771,15 +777,12 @@ class MeshConstructor:
                     first_lit = False
 
     def build_interp(self, lignes_contraintes, pas_long, constant_ech_long):
-        """
-        @param profils_travers <SuiteProfilsTravers>:
-        """
         self.build_initial_profiles()
 
         ### BOUCLE SUR L'ESPACE INTER-PROFIL
-        print("~> Construction du maillage par zone interprofils puis par lit")
+        logger.info("~> Construction du maillage par zone interprofils puis par lit")
         for i, (prev_profil, next_profil) in enumerate(zip(self.profils_travers, self.profils_travers[1:])):
-            print("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
+            logger.debug("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
 
             if constant_ech_long:
                 nb_pts_inter = prev_profil.calcul_nb_pts_inter(next_profil, pas_long)
@@ -787,10 +790,11 @@ class MeshConstructor:
 
             # Recherche des limites communes entre les deux profils
             common_limites_id = prev_profil.common_limits(next_profil.limites.keys())
-            print("Limites de lits communes : {}".format(list(common_limites_id)))
+            logger.debug("Limites de lits communes : {}".format(list(common_limites_id)))
 
             if len(common_limites_id) < 2:
-                sys.exit("ERREUR: aucune interpolation pour l'intervalle {} ({} limites communes)".format(i, len(common_limites_id)))
+                raise TatooineException("Aucune interpolation pour l'intervalle {} ({} limites communes)".format(
+                    i, len(common_limites_id)))
 
             else:
                 first_lit = True
@@ -799,7 +803,7 @@ class MeshConstructor:
                     pt_list_L1 = []
                     pt_list_L2 = []
 
-                    print("Lit {}-{}".format(id1, id2))
+                    logger.debug("Lit {}-{}".format(id1, id2))
 
                     # Extraction d'une partie des profils
                     lit_1 = prev_profil.extraire_lit(id1, id2)
@@ -812,16 +816,20 @@ class MeshConstructor:
                     dXp_L2 = Xp_profil2_L2 - Xp_profil1_L2
 
                     if dXp_L1 < 0:
-                        sys.exit("La ligne {} n'est pas orientée dans le même ordre que les profils".format(id1))
+                        raise TatooineException("La ligne {} n'est pas orientée dans le même ordre que les profils"
+                                                .format(id1))
                     if dXp_L2 < 0:
-                        sys.exit("La ligne {} n'est pas orientée dans le même ordre que les profils".format(id2))
+                        raise TatooineException("La ligne {} n'est pas orientée dans le même ordre que les profils"
+                                                .format(id2))
 
                     if not constant_ech_long:
                         nb_pts_inter = ceil(min(dXp_L1, dXp_L2)/pas_long) - 1
                         Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
-                    L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1, Xp_adm_list)
-                    L2_coord_int = lignes_contraintes[id2].coord_sampling_along_line(Xp_profil1_L2, Xp_profil2_L2, Xp_adm_list)
+                    L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1,
+                                                                                     Xp_adm_list)
+                    L2_coord_int = lignes_contraintes[id2].coord_sampling_along_line(Xp_profil1_L2, Xp_profil2_L2,
+                                                                                     Xp_adm_list)
 
                     ### BOUCLE SUR LES LIGNES
                     for k in range(nb_pts_inter):
@@ -831,7 +839,8 @@ class MeshConstructor:
                         P2 = Point(tuple(L2_coord_int[k]))
 
                         lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp,
-                                                                  ceil(P1.distance(P2)/self.pas_trans)+1), ['Xt', 'xt'])
+                                                                  ceil(P1.distance(P2)/self.pas_trans)+1),
+                                      ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
                         coord_int = lit_int.array[['X', 'Y'] + lit_int.z_labels]
                         pt_list_L1.append(self.i_pt + 1)
@@ -855,9 +864,9 @@ class MeshConstructor:
                         first_lit = False
 
     def corr_bathy_on_epis(self, epis, dist_corr_epi):
-        print("~> Correction de la bathymétrie autour des épis")
+        logger.info("~> Correction de la bathymétrie autour des épis")
         if set(self.z_labels) != set(['Z']):
-            sys.exit('Impossible de corriger les épis sur les couches sédimentaires')
+            raise TatooineException("Impossible de corriger les épis sur les couches sédimentaires")
         for epi in epis:
             epi_geom = epi.coord.convert_as_linestring()
             for i, coord in enumerate(self.points):
@@ -868,22 +877,22 @@ class MeshConstructor:
                     self.points['Z'][i] = pt_proj.z
 
     def build_mesh(self):
-        print("~> Calcul du maillage")
+        logger.info("~> Calcul du maillage")
         tri = self.export_as_dict()
         self.triangle = triangle.triangulate(tri, opts='p')
         try:
             nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
         except KeyError:
-            sys.exit("ERREUR: La génération du maillage a échouée!")
-        print("Génération d'un maillage avec {} noeuds et {} éléments".format(nnode, nelem))
+            raise TatooineException("La génération du maillage a échouée!")
+        logger.info("Génération d'un maillage avec {} noeuds et {} éléments".format(nnode, nelem))
 
     def export_points(self, path):
         if path.endswith('.xyz'):
-            print("~> Exports en xyz des points")
+            logger.info("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                np.savetxt(fileout, self.points[['X', 'Y', 'Z']])  #, fmt='%.4f')
+                np.savetxt(fileout, self.points[['X', 'Y', 'Z']], delimiter=' ', fmt='%.{}f'.format(DIGITS))
         elif path.endswith('.shp'):
-            print("~> Exports en shp des points")
+            logger.info("~> Exports en shp des points")
             with shapefile.Writer(path, shapeType=shapefile.POINTZ) as w:
                 w.field('PK', 'N', decimal=6)
                 for name in self.z_labels:
@@ -919,7 +928,7 @@ class MeshConstructor:
             raise NotImplementedError
 
     def export_mesh(self, path):
-        print("~> Écriture du maillage")
+        logger.info("~> Écriture du maillage")
 
         nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
         if path.endswith('.t3s'):

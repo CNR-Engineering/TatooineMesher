@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Interpolation linéaire entre profils en travers
 Génération d'un maillage (optionnel)
@@ -9,13 +10,13 @@ import time
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
-from core.utils import get_axe_hydraulique
+from core.utils import get_axe_hydraulique, logger, TatooineException
 
 
 def linear_interpolator_and_mesher(args):
     t1 = time.process_time()
 
-    print("~> Lecture des fichiers d'entrées")
+    logger.info("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
     profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
                                                     field_id=args.attr_profils_travers)
@@ -48,7 +49,7 @@ def linear_interpolator_and_mesher(args):
         mesh_constr.export_mesh(args.outfile_mesh)
 
     t2 = time.process_time()
-    print("=> le temps d'execution est de : {}s".format(t2-t1))
+    logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
 parser = MyArgParse(description=__doc__)
@@ -70,4 +71,7 @@ parser_outfiles.add_argument("--outfile_semis", help="semis de points au format 
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    linear_interpolator_and_mesher(args)
+    try:
+        linear_interpolator_and_mesher(args)
+    except TatooineException as e:
+        logger.critical(e.message)

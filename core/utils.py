@@ -1,8 +1,16 @@
+import logging
 import numpy as np
 import shapefile
 import sys
 
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
+
+
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def get_intersections(linestrings):
@@ -42,12 +50,24 @@ def get_axe_hydraulique(infile_axe):
             lines = list(in_i2s.get_open_polylines())
     elif infile_axe.endswith('.shp'):
         if shp.get_shape_type(infile_axe) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
-            sys.exit("Le fichier %s n'est pas de type POLYLINEZ" % infile_axe)
+            raise TatooineException("Le fichier %s n'est pas de type POLYLINEZ" % infile_axe)
         lines = list(shp.get_open_polylines(infile_axe))
     else:
         raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour l'axe hydraulique")
     nb_lines = len(lines)
     if nb_lines != 1:
-        sys.exit("Le fichier '{}' contient {} polylignes au lieu d'une seule pour définir l'axe hydraulique".format(
-            infile_axe, nb_lines))
+        raise TatooineException("Le fichier '{}' contient {} polylignes au lieu d'une seule pour définir "
+                                "l'axe hydraulique".format(infile_axe, nb_lines))
     return lines[0].polyline()
+
+
+class TatooineException(Exception):
+    """!
+    @brief Custom exception for TatooineMesher
+    """
+    def __init__(self, message):
+        """!
+        @param message <str>: error message description
+        """
+        super().__init__(message)
+        self.message = message
