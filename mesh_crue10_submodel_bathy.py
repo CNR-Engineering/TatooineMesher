@@ -126,9 +126,6 @@ def mesh_crue10_submodel_bathy(args):
         except TatooineException as e:
             logger.critical(e.message)
 
-        if i > 800:
-            break
-
     mesh_constr.points = points
     mesh_constr.triangle = triangles
 
