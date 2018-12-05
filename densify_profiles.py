@@ -6,10 +6,11 @@ import time
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
-from core.utils import get_axe_hydraulique, logger, TatooineException
+from core.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
 
 
 def densify_profiles(args):
+    set_logger_level(args.verbose)
     t1 = time.clock()
 
     logger.info("~> Lecture des fichiers d'entrées")
@@ -40,6 +41,7 @@ parser = MyArgParse(description=__doc__)
 parser.add_common_args()
 # Outputs
 parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s)")
+
 
 if __name__ == '__main__':
     args = parser.parse_args()

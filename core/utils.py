@@ -1,16 +1,16 @@
 import logging
 import numpy as np
 import shapefile
-import sys
 
+from crue10.utils import logger as crue10_logger
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
+from pyteltools.utils.log import set_logger_level as set_pyteltools_logger_level
 
 
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('%(message)s'))
 logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 
 def get_intersections(linestrings):
@@ -59,6 +59,13 @@ def get_axe_hydraulique(infile_axe):
         raise TatooineException("Le fichier '{}' contient {} polylignes au lieu d'une seule pour définir "
                                 "l'axe hydraulique".format(infile_axe, nb_lines))
     return lines[0].polyline()
+
+
+def set_logger_level(set_to_debug):
+    level = logging.DEBUG if set_to_debug else logging.INFO
+    logger.setLevel(level)
+    crue10_logger.setLevel(level)
+    set_pyteltools_logger_level(level)
 
 
 class TatooineException(Exception):

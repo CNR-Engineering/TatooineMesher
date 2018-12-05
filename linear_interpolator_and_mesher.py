@@ -10,10 +10,11 @@ import time
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
-from core.utils import get_axe_hydraulique, logger, TatooineException
+from core.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
 
 
 def linear_interpolator_and_mesher(args):
+    set_logger_level(args.verbose)
     t1 = time.process_time()
 
     logger.info("~> Lecture des fichiers d'entrées")
@@ -68,6 +69,7 @@ parser_outfiles.add_argument("--outfile_mesh", help="maillage au format : slf (T
                                                     " ou xml (LandXML pour ArcGIS)")
 parser_outfiles.add_argument("--outfile_semis", help="semis de points au format xyz"
                                                      " (correspond aux noeuds du maillage")
+
 
 if __name__ == '__main__':
     args = parser.parse_args()

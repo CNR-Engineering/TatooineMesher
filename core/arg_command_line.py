@@ -1,8 +1,4 @@
-"""
-Custom argparse with a custom formatter_class and optional arguments
-"""
 import argparse
-import sys
 
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
@@ -11,19 +7,13 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescri
 
 class MyArgParse(argparse.ArgumentParser):
     """
-    force and verbose are optional arguments
+    Custom argparse with a custom formatter_class and a clean help formatter
+    Verbose are argument is compulsory
     """
-    def __init__(self, add_args=[], *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         kwargs['formatter_class'] = CustomFormatter
         super(MyArgParse, self).__init__(*args, **kwargs)
-
-        for arg in add_args:
-            if arg == 'force':
-                self.add_argument("--force", "-f", help="force output overwrite", action="store_true")
-            elif arg == 'verbose':
-                self.add_argument("--verbose", "-v", help="increase output verbosity", action="store_true")
-            else:
-                sys.exit("Argument inconnu: '{}'".format(arg))
+        self.add_argument("--verbose", "-v", help="increase output verbosity", action="store_true")
 
     def add_common_args(self):
         parser_infiles = self.add_argument_group("Fichiers d'entrée obligatoires")

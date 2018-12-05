@@ -3,7 +3,7 @@
 Génération d'une surface 2D à partir de la géométrie d'un sous-modèle Crue10
 /!\ Pour l'instant seuls les sections profil des branches Saint-Venant sont considérées et sans prise en compte des limites de lits!
 """
-from crue10.emh.section import SectionIdem, SectionProfil
+from crue10.emh.section import SectionProfil
 from crue10.emh.submodel import SubModel
 from crue10.utils import CrueError, logger
 import numpy as np
@@ -11,13 +11,15 @@ import sys
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers, ProfilTravers
-from core.utils import float_vars, logger, TatooineException
+from core.utils import float_vars, logger, set_logger_level, TatooineException
 
 
 SHIFT_TRACE_TO_EXTERMITY = True
 
 
 def mesh_crue10_submodel_bathy(args):
+    set_logger_level(args.verbose)
+
     # Read SubModel from xml/shp files
     try:
         model = SubModel(args.infile_etu, args.submodel_name)
@@ -98,6 +100,7 @@ def mesh_crue10_submodel_bathy(args):
     mesh_constr.points = points
     mesh_constr.triangle = triangles
 
+    logger.info(mesh_constr.summary())  # General information about the merged mesh
     if args.outfile_semis is not None:
         mesh_constr.export_points(args.outfile_semis)
     if args.outfile_mesh is not None:

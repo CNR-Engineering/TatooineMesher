@@ -880,11 +880,14 @@ class MeshConstructor:
         logger.info("~> Calcul du maillage")
         tri = self.export_as_dict()
         self.triangle = triangle.triangulate(tri, opts='p')
+        logger.info(self.summary())
+
+    def summary(self):
         try:
             nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
         except KeyError:
             raise TatooineException("La génération du maillage a échouée!")
-        logger.info("Génération d'un maillage avec {} noeuds et {} éléments".format(nnode, nelem))
+        return "Génération d'un maillage avec {} noeuds et {} éléments".format(nnode, nelem)
 
     def export_points(self, path):
         if path.endswith('.xyz'):
