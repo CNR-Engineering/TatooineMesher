@@ -7,7 +7,7 @@ Tatooine Mesher
 
 * **Interpolateur** linéaire à l'aide de lignes directrices 2D :
     * densificateur de profils 1D : ajout de profils intermédiaires interpolés
-    * possibilité de
+    * possibilité de conserver les profils initiaux => TODO
 * **Mailleur 2D** : triangulation Delaunay contrainte avec comme :
     * sommets : ceux issus de l'interpolateur
     * arêtes contraintes : celles qui sont le long des profils en travers et des lignes de contraintes
@@ -86,6 +86,17 @@ Sans lignes de contrainte  | Avec lignes de contrainte
 -------------------------- | -------------------------
 ![Illustration A](media/lim_without_hardlines.png) | ![Illustration B](media/lim_with_hardlines.png)
 
+### Génération d'un maillage 2D à partir d'un sous-modèle Crue10
+Cet outil consiste à appliquer l'interpolateur/mailleur 2D aux données bathymétriques contenues dans un sous-modèle Crue10.
+Un sous-maillage est réalisé pour chaque branche à traiter, à partir des données des EMH et des coordonnées géographiques des objets.
+
+Exemple d'utilisation basique :
+```bash
+mesh_crue10_submodel_bathy.py in/Etu_VS2015_conc/Etu_VS2003_Conc.etu.xml Sm_VS2013_c10_octobre_2014 --types_branches 2 6 15 20 --outfile_mesh out/mesh.slf --outfile_semis out/points.shp --pas_long 8.0 --pas_trans 5.0
+```
+
+![Illustration A](media/mesh_crue10_submodel_bathy_VS2015_on_BK.png)
+
 ### Description des quelques arguments particuliers
 Les arguments `attr_profils_travers` et `attr_epis` permettent de définir l'attribut à utiliser pour identifier
 respectivement les profils et les épis.
@@ -101,4 +112,3 @@ Ainsi les points en sortie correspondront aux profils que le densificateur de pr
 ## TODO
 * read "lignes contraintes" from ST files
 * add option to project per `Lit` for all profiles
-* use a logger for message handling
