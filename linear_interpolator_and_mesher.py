@@ -26,7 +26,7 @@ def linear_interpolator_and_mesher(args):
     if has_epi:
         epis = SuiteProfilsTravers.from_file(args.infile_epis, "Épi", field_id=args.attr_epis)
 
-    profils_travers.compute_dist_proj_axe(axe)
+    profils_travers.compute_dist_proj_axe(axe, args.dist_max)
     profils_travers.check_intersections()
     profils_travers.sort_by_dist()
 

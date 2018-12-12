@@ -497,6 +497,7 @@ class SuiteProfilsTravers:
                         if dist < dist_max:
                             profil.dist_proj_axe = 0.0 if pos == 0 else axe_geom.length
             if profil.dist_proj_axe == -1:
+                # TODO 1: Ignore these profiles properly
                 raise TatooineException("'{}' n'intersecte pas l'axe (distance = {}m)".format(
                                         profil, profil.geom.distance(axe_geom)))
 
@@ -565,6 +566,7 @@ class LigneContrainte:
         """
         Extraction d'objects LineString à partir d'un fichier i2s
         Info: value is ignored
+        TODO 2: Use a SuiteProfilTravers instance to get the correct profiles order?
         """
         lines = []
         if filename is not None:
@@ -579,7 +581,7 @@ class LigneContrainte:
                 for i, line in enumerate(shp.get_open_polylines(filename)):
                     lines.append(LigneContrainte(i, list(line.polyline().coords)))
             else:
-                raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour les profils en travers")
+                raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour les lignes de contrainte")
         return lines
 
     @staticmethod

@@ -18,7 +18,7 @@ def densify_profiles(args):
     profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
                                                     field_id=args.attr_profils_travers)
 
-    profils_travers.compute_dist_proj_axe(axe)
+    profils_travers.compute_dist_proj_axe(axe, args.dist_max)
     profils_travers.check_intersections()
     profils_travers.sort_by_dist()
 
