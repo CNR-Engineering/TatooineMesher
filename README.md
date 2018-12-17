@@ -36,7 +36,6 @@ georefC       |         | X        | *.georefC | Oui
 Les couches sédimentaires permettent de décrire les interfaces entre les couches et seul les formats
  "shp POINTZ" et georefC peuvent contenir ces informations.
 
-### Fichier de profils en travers
 * cas des lignes (**i3s**, **shp**, **ST**, **georefC**)
     * les profils ne sont pas nécessairement ordonnées, c'est l'axe hydraulique qui permet de les ré-ordonner
     * tous les profils sont décrits dans le même sens (rive gauche à droite, ou inversement)
@@ -68,13 +67,13 @@ Voici un exemple :
 densify_profiles.py -h
 ```
 
-![Illustration densificateur](media/densifier.png)
-
 ### Densificateur de profils
 Exemple d'utilisation basique :
 ```bash
 densify_profiles.py axe.i2s profils.i3s out.shp --pas_long 6 --pas_trans 4
 ```
+
+![Illustration densificateur](media/densifier.png)
 
 ### Interpolateur/mailleur 2D
 Exemple d'utilisation basique :
