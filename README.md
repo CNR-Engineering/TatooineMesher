@@ -5,9 +5,8 @@ Tatooine Mesher
 
 ## Description
 
-* **Interpolateur** linéaire à l'aide de lignes directrices 2D :
-    * densificateur de profils 1D : ajout de profils intermédiaires interpolés
-    * possibilité de conserver les profils initiaux => TODO
+* **Interpolateur** linéaire à partir de profils en travers et en suivant des lignes directrices 2D (longitudinales et/ou transversales)
+* **Densificateur de profils 1D** par ajout de profils intermédiaires interpolés
 * **Mailleur 2D** : triangulation Delaunay contrainte avec comme :
     * sommets : ceux issus de l'interpolateur
     * arêtes contraintes : celles qui sont le long des profils en travers et des lignes de contraintes
@@ -26,22 +25,23 @@ This module is used to read/write some specific file formats of Telemac and Blue
 
 Le tableau suivant compare les informations contenues dans les différents formats de fichiers :
 
-Format        | Extension | Sédiments
---------------|-----------|----------
-BlueKenue     | *.i3s     | Non
-shp POINTZ    | *_pts.shp | Oui
-shp POLYLINEZ | *.shp     | Non
-Irstea        | *.ST      | Non
+Format        | Lecture | Écriture | Extension | Sédiments
+--------------|---------|----------|-----------|----------
+BlueKenue     | X       | X        | *.i3s     | Non
+shp POINTZ    | X       | X        | *_pts.shp | Oui
+shp POLYLINEZ | X       | X        | *.shp     | Non
+Mage/RubarBE  | X       |          | *.ST      | Non
+georefC       |         | X        | *.georefC | Oui
 
-Les couches sédimentaires permettent de décrire les interfaces entre les couches et seul le format "shp POINTZ"
-peut contenir ces informations.
+Les couches sédimentaires permettent de décrire les interfaces entre les couches et seul les formats
+ "shp POINTZ" et georefC peuvent contenir ces informations.
 
 ### Fichier de profils en travers
-* cas des lignes (**i3s**, **shp**, **ST**)
+* cas des lignes (**i3s**, **shp**, **ST**, **georefC**)
     * les profils ne sont pas nécessairement ordonnées, c'est l'axe hydraulique qui permet de les ré-ordonner
-    * tous les profils sont décrits dans le même sens (rive gauche à droite ou inversement)
+    * tous les profils sont décrits dans le même sens (rive gauche à droite, ou inversement)
 * cas des points (**_pts.shp**)
-    * tous les profils sont décrits dans le même sens (rive gauche à droite ou inversement)
+    * tous les profils sont décrits dans le même sens (rive gauche à droite, ou inversement)
 
 ### Fichier de l'axe hydraulique
 * les lignes 2D sous fournies dans un des formats : **i2s** ou **shp**
@@ -112,3 +112,4 @@ Ainsi les points en sortie correspondront aux profils que le densificateur de pr
 ## TODO
 * read "lignes contraintes" from ST files
 * add option to project per `Lit` for all profiles
+* possibilité de conserver les profils initiaux

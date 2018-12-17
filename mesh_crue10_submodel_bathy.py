@@ -87,20 +87,16 @@ def mesh_crue10_submodel_bathy(args):
 
                 if args.outfile_mesh is not None:
                     mesh_constr.build_mesh()
-                    if len(mesh_constr.points) != len(mesh_constr.triangle['vertices']):
-                        raise TatooineException("Mesh is corrupted... %i vs %i nodes" % (
-                            len(mesh_constr.points), len(mesh_constr.triangle['vertices'])))
-                    else:
-                        if not triangles:  # set initial values from first iteration
-                            points = mesh_constr.points
-                            triangles['triangles'] = mesh_constr.triangle['triangles']
-                            triangles['vertices'] = mesh_constr.triangle['vertices']
-                        else:  # concatenate with current sub-mesh for next iterations
-                            points = np.hstack((points, mesh_constr.points))
-                            triangles['triangles'] = np.vstack(
-                                (triangles['triangles'],
-                                 triangles['vertices'].shape[0] + mesh_constr.triangle['triangles']))
-                            triangles['vertices'] = np.vstack((triangles['vertices'], mesh_constr.triangle['vertices']))
+                    if not triangles:  # set initial values from first iteration
+                        points = mesh_constr.points
+                        triangles['triangles'] = mesh_constr.triangle['triangles']
+                        triangles['vertices'] = mesh_constr.triangle['vertices']
+                    else:  # concatenate with current sub-mesh for next iterations
+                        points = np.hstack((points, mesh_constr.points))
+                        triangles['triangles'] = np.vstack(
+                            (triangles['triangles'],
+                             triangles['vertices'].shape[0] + mesh_constr.triangle['triangles']))
+                        triangles['vertices'] = np.vstack((triangles['vertices'], mesh_constr.triangle['vertices']))
             else:
                 logger.info("Branche ignorée par manque de sections")
         except TatooineException as e:

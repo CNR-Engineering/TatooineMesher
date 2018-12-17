@@ -30,6 +30,7 @@ from .utils import float_vars, get_intersections, logger, strictly_increasing, T
 DIGITS = 4  # for csv and xml exports
 LANG = 'fr'  # for variable names
 ST_SECTION_ENDING = '     999.9990     999.9990     999.9990 '
+COURLIS_FLOAT_FMT = '%.6f'
 
 
 class Coord:
@@ -373,7 +374,7 @@ class SuiteProfilsTravers:
                 coords, z_layers = [], []
                 last_point_id = None
                 for i, (point, attributes) in enumerate(shp.get_points(filename, with_z=True)):
-                    point_id = i if field_id is None else attributes[field_id_index]
+                    point_id = attributes[field_id_index]  # FIXME: raises exception if field_id_index is None!
                     if i > 0 and point_id != last_point_id:
                         z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
                         profils_travers.add_profile(ProfilTravers(last_point_id, coords, z_array, label))
@@ -882,6 +883,9 @@ class MeshConstructor:
         logger.info("~> Calcul du maillage")
         tri = self.export_as_dict()
         self.triangle = triangle.triangulate(tri, opts='p')
+        if len(self.points) != len(self.triangle['vertices']):
+            raise TatooineException("Mesh is corrupted... %i vs %i nodes" % (
+                len(self.points), len(self.triangle['vertices'])))
         logger.info(self.summary())
 
     def summary(self):
@@ -910,12 +914,35 @@ class MeshConstructor:
                         w.pointz(values['X'], values['Y'], values['Z'])
                         w.record(dist, *[values[name] for name in self.z_labels])
         else:
-            raise NotImplementedError
+            raise NotImplementedError("Seuls les formats shp et xyz sont supportés pour les semis de points")
 
     def export_profiles(self, path):
         """
         /!\ Pas cohérent si constant_ech_long est différent de True
         """
+        if path.endswith('.georefC'):
+            with open(path, 'w') as out_geo:
+                for dist in np.unique(self.points['profil']):
+                    pos = self.points['profil'] == dist
+                    points = self.points[pos]
+
+                    # Compute Xt  (FIXME: rather keep from previous calculations...
+                    Xt = np.sqrt(np.power(np.ediff1d(points['X'], to_begin=0.), 2) +
+                                 np.power(np.ediff1d(points['Y'], to_begin=0.), 2))
+                    Xt = Xt.cumsum()
+                    points = append_fields(points, 'Xt', Xt, usemask=False)
+
+                    for i, row in enumerate(points):
+                        if i == 0:
+                            positions_str = ' %f %f %f %f' % (row['X'], row['Y'], points[-1]['X'], points[-1]['Y'])
+                            positions_str += ' AXE %f %f' % (row['X'], row['Y'])  # FIXME: not the axis position...
+                            out_geo.write('Profil Bief_0 %s %f%s\n' % ('P' + str(dist), dist, positions_str))  # FIXME: fix profil name
+
+                        layers_str = ' ' + ' '.join([COURLIS_FLOAT_FMT % row[z_label]
+                                                     for z_label in self.z_labels])
+                        out_geo.write('%f%s B %f %f\n' % (row['Xt'], layers_str, row['X'], row['Y']))
+            return
+
         lines = []
         for dist in np.unique(self.points['profil']):
             pos = self.points['profil'] == dist
@@ -930,7 +957,8 @@ class MeshConstructor:
         elif path.endswith('.shp'):
             shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
         else:
-            raise NotImplementedError
+            raise NotImplementedError("Seuls les formats shp, i3s et georefC sont supportés pour écrire le "
+                                      "fichier de profils en travers")
 
     def export_mesh(self, path):
         logger.info("~> Écriture du maillage")
@@ -1000,7 +1028,7 @@ class MeshConstructor:
                 resout.write_entire_frame(output_header, 0, values)
 
         else:
-            raise NotImplementedError
+            raise NotImplementedError("Seuls les formats t3d, xml et slf sont supportés pour les maillages")
 
 
 class GeometryRequestException(Exception):
