@@ -40,7 +40,7 @@ def densify_profiles(args):
 parser = MyArgParse(description=__doc__)
 parser.add_common_args()
 # Outputs
-parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s)")
+parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s, georefC, shp)")
 
 
 if __name__ == '__main__':
