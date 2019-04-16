@@ -915,7 +915,7 @@ class MeshConstructor:
         if path.endswith('.xyz'):
             logger.info("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                np.savetxt(fileout, repack_fields(self.points[['X', 'Y', self.z_labels ]]),
+                np.savetxt(fileout, repack_fields(self.points[['X', 'Y', self.var_for_Z]]),
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
         elif path.endswith('.shp'):
             logger.info("~> Exports en shp des points")
@@ -963,7 +963,7 @@ class MeshConstructor:
         lines = []
         for dist in np.unique(self.points['profil']):
             pos = self.points['profil'] == dist
-            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
+            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', self.var_for_Z]]])
             line.add_attribute(dist)
             lines.append(line)
 
@@ -1006,7 +1006,7 @@ class MeshConstructor:
 
             with open(path, mode='ab') as fileout:
                 # Tableau des coordonnées (x, y, z)
-                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.points['Z'])), delimiter=' ',
+                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.points[self.var_for_Z])), delimiter=' ',
                            fmt='%.{}f'.format(DIGITS))
 
                 # Tableau des éléments (connectivité)
@@ -1017,7 +1017,7 @@ class MeshConstructor:
                 loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
             template = env.get_template("LandXML_template.xml")
             template_render = template.render(
-                nodes=np.round(np.column_stack((self.triangle['vertices'], self.points['Z'])), DIGITS),
+                nodes=np.round(np.column_stack((self.triangle['vertices'], self.points[self.var_for_Z])), DIGITS),
                 ikle=self.triangle['triangles'] + 1
             )
 
