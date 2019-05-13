@@ -23,6 +23,7 @@ from crue10.emh.submodel import SubModel
 from crue10.utils import CrueError, logger
 import numpy as np
 import sys
+from time import perf_counter
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers, ProfilTravers
@@ -33,6 +34,7 @@ SHIFT_TRACE_TO_EXTERMITY = True
 
 def mesh_crue10_submodel_bathy(args):
     set_logger_level(args.verbose)
+    t1 = perf_counter()
 
     # Read SubModel from xml/shp files
     try:
@@ -112,6 +114,9 @@ def mesh_crue10_submodel_bathy(args):
         mesh_constr.export_points(args.outfile_semis)
     if args.outfile_mesh is not None:
         mesh_constr.export_mesh(args.outfile_mesh)
+
+    t2 = perf_counter()
+    logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
 parser = MyArgParse(description=__doc__)

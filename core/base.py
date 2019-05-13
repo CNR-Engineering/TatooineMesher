@@ -14,7 +14,7 @@ from copy import deepcopy
 from jinja2 import Environment, FileSystemLoader
 from math import ceil
 import numpy as np
-from numpy.lib.recfunctions import append_fields
+from numpy.lib.recfunctions import append_fields, repack_fields
 import os.path
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
@@ -38,18 +38,24 @@ class Coord:
     Coord: ensemble de points 2D/3D consécutifs (ex: polylignes)
 
     ### Attributs
-    - array
+    - array: structured array with coordinates ('X', 'Y'), variables (see z_labels) and eventually distance(s) ('Xt', 'xt')
+    - z_labels: nom des variables d'intérêt
 
     ### Méthodes
     - compute_Xt
     - compute_xt
-    - compute_xp
     - move_between_targets
+    - compute_xp
+    - convert_as_array
+    - convert_as_linestring
+    - set_layers
+    - add_single_layer
     """
     def __init__(self, array, vars2add, remove_duplicates=False):
         """
-        array: X, Y (Z is optional)
-        Add Xt and xt columns if not already present
+        @param array: structured array. `X`, `Y` are compulsary but other variables (such as Z) and distances are optional
+        @param var2add <[str]>: list including eventually `Xt` and/or `xt` top compute them if they are not already present
+        @param remove_duplicates <bool>: remove consecutive duplicated points
         """
         self.array = array
         vars = list(self.array.dtype.fields)
@@ -75,7 +81,7 @@ class Coord:
 
     def compute_Xt(self):
         """
-        Calcul de l'abscisse curviligne (distance 2D cumulée)
+        Calcul de l'abscisse curviligne `Xt` (distance 2D cumulée)
         """
         Xt = np.sqrt(np.power(np.ediff1d(self.array['X'], to_begin=0.), 2) +
                      np.power(np.ediff1d(self.array['Y'], to_begin=0.), 2))
@@ -84,8 +90,8 @@ class Coord:
 
     def compute_xt(self):
         """
-        Calcul de l'asbcisse curviligne adimensionnée (de 0 à 1)
-        /!\ La colonne 'Xt' doit déjà exister
+        Calcul de l'abscisse curviligne adimensionnée `xt` (de 0 à 1)
+        /!\ La colonne `Xt` doit déjà exister
         """
         if len(self.array) > 1:
             xt = (self.array['Xt'] - self.array['Xt'][0])/(self.array['Xt'][-1] - self.array['Xt'][0])
@@ -124,31 +130,38 @@ class Coord:
         self.array = append_fields(self.array, 'xp', xp, usemask=False)
 
     def convert_as_array(self):
+        """Returns a float 2D-array with X, Y and Z (it has to exist)"""
         return np.column_stack((self.array['X'], self.array['Y'], self.array['Z']))
 
     def convert_as_linestring(self):
+        """Returns a LineString object"""
         return LineString(self.convert_as_array())
 
     def set_layers(self, z_values):
+        """Sets multiple variables"""
         #TODO: purge z_labels and array attributs before appending? Or refactor method to `add`
         z_labels = list(z_values.dtype.names)
         for z_label in z_labels:
             self.add_single_layer(z_label, z_values[z_label])
 
     def add_single_layer(self, name, z_array):
+        """Add a new single variable"""
         self.z_labels.append(name)
         self.array = np.lib.recfunctions.append_fields(self.array, name, z_array, usemask=False)
 
 
 class ProfilTravers:
     """
-    ProfilTravers: représente un profil en travers
+    ProfilTravers: représente un profil en travers avec éventuellement plusieurs variables en chacun de ses points
 
     ### Attributs
     - id <integer>: identifiant unique (numérotation automatique commençant à 0)
-    - coord <Coord>: coordonnées (avec tous les niveaux)
+    - label <str>: type de profil (`Profils en travers` ou `Épi`)
+    - coord <Coord>: coordonnées (X et Y) avec toutes les variables
+    - nb_points <int>: number of points
     - geom <shapely.geometry.LineString>: objet géometrique 2D
-    - limites <dict>: dictionnaire du type: {id_ligne: (Xt_profil, Xt_ligne, intersection.z)}
+    - limites <OrderedDict>: dictionnaire ordonné avec comme clé `id_ligne` et comme valeur
+          un dict avec Xt_profil Xt_ligne, X, Y, ...
     - dist_proj_axe (créée par une méthode de <SuiteProfilsTravers>)
 
     ### Méthodes
@@ -162,8 +175,6 @@ class ProfilTravers:
     - calcul_nb_pts_inter
     - change_coord
     """
-    LABELS = ['X', 'Y', 'Z', 'Xt']
-
     def __init__(self, id, coord, z_values, label):
         """
         Créer un profil à partir d'un semis de points ordonnés (coordonnées X, Y, Z)
@@ -666,26 +677,30 @@ class Lit(Coord):
 
 class MeshConstructor:
     """
-    MeshConstructor: données pour construire un maillage
+    MeshConstructor: construire un maillage et interpoler les valeurs
 
     ### Attributs
-    - profils_travers
-    - pas_trans
-    - z_labels: variables
-    - points: 2D-array with columns ['X', 'Y', 'profil', 'lit'] + z_labels
-    - i_pt <int> (curseur pour répérer l'avancement)
-    - segments
-    - triangle
+    - profils_travers <SuiteProfilsTravers>
+    - pas_trans <float>: pas transversal (m)
+    - z_labels <[str]>: noms des variables d'intérêt
+    - var_for_Z <str>: nom de la variable à utiliser si le format de sortie n'a qu'un Z possible
+    - points: structured array with columns ['X', 'Y', 'profil', 'lit'] + z_labels
+    - i_pt <int>: curseur pour repérer l'avancement
+    - segments <2D-array int>: list of nodes numbers (0-indexed) to define constrainted segments
+    - triangle <dict>: dictionary with 2 keys `vertices` (2D nodes) and `triangles` (connectivity table)
 
     ### Méthodes
     - add_points
     - add_segments
     - add_segments_from_node_list
     - export_as_dict
-    - add_submesh
-
-    /!\ Les éléments sont numérotés à partir de 0
-      (dans le tableau segments)
+    - build_initial_profiles
+    - build_interp
+    - corr_bathy_on_epis
+    - build_mesh
+    - export_points
+    - export_profiles
+    - export_mesh
     """
     POINTS_DTYPE = float_vars(['X', 'Y', 'profil']) + [(var, np.int) for var in ('lit', )]
 
@@ -694,6 +709,7 @@ class MeshConstructor:
         self.pas_trans = pas_trans
 
         self.z_labels = profils_travers[0].coord.z_labels
+        self.var_for_Z = self.z_labels[0]  # first variable is used for Z if format requires it
         self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE + float_vars(self.z_labels))
         self.i_pt = int(-1)
         self.segments = np.empty([0, 2], dtype=np.int)
@@ -908,7 +924,8 @@ class MeshConstructor:
         if path.endswith('.xyz'):
             logger.info("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                np.savetxt(fileout, self.points[['X', 'Y', 'Z']], delimiter=' ', fmt='%.{}f'.format(DIGITS))
+                np.savetxt(fileout, repack_fields(self.points[['X', 'Y', self.var_for_Z]]),
+                           delimiter=' ', fmt='%.{}f'.format(DIGITS))
         elif path.endswith('.shp'):
             logger.info("~> Exports en shp des points")
             with shapefile.Writer(path, shapeType=shapefile.POINTZ) as w:
@@ -920,7 +937,7 @@ class MeshConstructor:
                     vars = self.points[pos].dtype.names
                     for row in self.points[pos]:
                         values = {key: value for key, value in zip(vars, row)}
-                        w.pointz(values['X'], values['Y'], values['Z'])
+                        w.pointz(values['X'], values['Y'], values[self.var_for_Z])
                         w.record(dist, *[values[name] for name in self.z_labels])
         else:
             raise NotImplementedError("Seuls les formats shp et xyz sont supportés pour les semis de points")
@@ -955,7 +972,7 @@ class MeshConstructor:
         lines = []
         for dist in np.unique(self.points['profil']):
             pos = self.points['profil'] == dist
-            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', 'Z']]])
+            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', self.var_for_Z]]])
             line.add_attribute(dist)
             lines.append(line)
 
@@ -964,9 +981,9 @@ class MeshConstructor:
                 out_i3s.write_header()
                 out_i3s.write_lines(lines, [l.attributes()[0] for l in lines])
         elif path.endswith('.shp'):
-            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
+            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, self.var_for_Z)
         else:
-            raise NotImplementedError("Seuls les formats shp, i3s et georefC sont supportés pour écrire le "
+            raise NotImplementedError("Seuls les formats i3s, georefC et shp (POLYLINEZ) sont supportés pour écrire le "
                                       "fichier de profils en travers")
 
     def export_mesh(self, path):
@@ -998,7 +1015,7 @@ class MeshConstructor:
 
             with open(path, mode='ab') as fileout:
                 # Tableau des coordonnées (x, y, z)
-                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.points['Z'])), delimiter=' ',
+                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.points[self.var_for_Z])), delimiter=' ',
                            fmt='%.{}f'.format(DIGITS))
 
                 # Tableau des éléments (connectivité)
@@ -1009,7 +1026,7 @@ class MeshConstructor:
                 loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
             template = env.get_template("LandXML_template.xml")
             template_render = template.render(
-                nodes=np.round(np.column_stack((self.triangle['vertices'], self.points['Z'])), DIGITS),
+                nodes=np.round(np.column_stack((self.triangle['vertices'], self.points[self.var_for_Z])), DIGITS),
                 ikle=self.triangle['triangles'] + 1
             )
 

@@ -2,7 +2,7 @@
 """
 Densifier des profils en travers
 """
-import time
+from time import perf_counter
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
@@ -11,7 +11,7 @@ from core.utils import get_axe_hydraulique, logger, set_logger_level, TatooineEx
 
 def densify_profiles(args):
     set_logger_level(args.verbose)
-    t1 = time.clock()
+    t1 = perf_counter()
 
     logger.info("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
@@ -33,14 +33,14 @@ def densify_profiles(args):
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, True)
     mesh_constr.export_profiles(args.outfile_profiles)
 
-    t2 = time.clock()
+    t2 = perf_counter()
     logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
 
 
 parser = MyArgParse(description=__doc__)
 parser.add_common_args()
 # Outputs
-parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s)")
+parser.add_argument("outfile_profiles", help="fichier de sortie contenant les profils en travers (i3s, georefC, shp)")
 
 
 if __name__ == '__main__':
