@@ -784,6 +784,7 @@ class MeshConstructor:
 
         ### BOUCLE SUR L'ESPACE INTER-PROFIL
         logger.info("~> Construction du maillage par zone interprofils puis par lit")
+
         for i, (prev_profil, next_profil) in enumerate(zip(self.profils_travers, self.profils_travers[1:])):
             logger.debug("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
 
@@ -796,8 +797,8 @@ class MeshConstructor:
             logger.debug("Limites de lits communes : {}".format(list(common_limites_id)))
 
             if len(common_limites_id) < 2:
-                raise TatooineException("Aucune interpolation pour l'intervalle {} ({} limites communes)".format(
-                    i, len(common_limites_id)))
+                raise TatooineException("Aucune interpolation pour l'intervalle {}, entre {} et {} ({} limites communes)".format(
+                    i, prev_profil, next_profil, len(common_limites_id)))
 
             else:
                 first_lit = True
@@ -884,7 +885,15 @@ class MeshConstructor:
         tri = self.export_as_dict()
         self.triangle = triangle.triangulate(tri, opts='p')
         if len(self.points) != len(self.triangle['vertices']):
-            raise TatooineException("Mesh is corrupted... %i vs %i nodes" % (
+            if len(self.points) < len(self.triangle['vertices']):
+                logger.error("New nodes are:")
+                ori_points = np.column_stack((self.points['X'], self.points['Y']))
+                ori_combined = ori_points[:, 0] * ori_points[:, 1] / (ori_points[:, 0] + ori_points[:, 1])
+                new_points = self.triangle['vertices']
+                new_combined = new_points[:, 0] * new_points[:, 1] / (new_points[:, 0] + new_points[:, 1])
+                diff = np.setxor1d(ori_combined, new_combined)
+                logger.error(new_points[np.isin(new_combined, diff)])
+            raise TatooineException("Mesh is corrupted... %i vs %i nodes." % (
                 len(self.points), len(self.triangle['vertices'])))
         logger.info(self.summary())
 
