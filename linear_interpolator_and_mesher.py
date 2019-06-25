@@ -38,6 +38,7 @@ def linear_interpolator_and_mesher(args):
 
     mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
+    # mesh_constr.export_segments('check_segments.shp')  # DEBUG
 
     if has_epi:
         mesh_constr.corr_bathy_on_epis(epis, args.dist_corr_epi)

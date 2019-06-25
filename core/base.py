@@ -14,7 +14,7 @@ from copy import deepcopy
 from jinja2 import Environment, FileSystemLoader
 from math import ceil
 import numpy as np
-from numpy.lib.recfunctions import append_fields, repack_fields
+from numpy.lib.recfunctions import append_fields, rename_fields
 import os.path
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
@@ -40,6 +40,7 @@ class Coord:
     ### Attributs
     - array: structured array with coordinates ('X', 'Y'), variables (see z_labels) and eventually distance(s) ('Xt', 'xt')
     - z_labels: nom des variables d'intérêt
+    - values: structured array with values (different variables are possible)
 
     ### Méthodes
     - compute_Xt
@@ -48,9 +49,9 @@ class Coord:
     - compute_xp
     - convert_as_array
     - convert_as_linestring
-    - set_layers
-    - add_single_layer
     """
+    XY = ['X', 'Y']
+
     def __init__(self, array, vars2add, remove_duplicates=False):
         """
         @param array: structured array. `X`, `Y` are compulsary but other variables (such as Z) and distances are optional
@@ -58,14 +59,11 @@ class Coord:
         @param remove_duplicates <bool>: remove consecutive duplicated points
         """
         self.array = array
-        vars = list(self.array.dtype.fields)
-        self.z_labels = []
-        for var in vars:
-            if var not in ('X', 'Y', 'Xt', 'xt'):
-                self.z_labels.append(var)
+        self.coord_labels = list(self.array.dtype.fields.keys())
+        self.values = None
 
-        if 'X' not in vars and 'Y' not in vars:
-            raise TatooineException("Columns X and Y are compulsory. Following columns were found: {}".format(vars))
+        if 'X' not in self.coord_labels and 'Y' not in self.coord_labels:
+            raise TatooineException("Columns X and Y are compulsory.")
 
         if 'Xt' in vars2add:
             self.compute_Xt()
@@ -78,6 +76,12 @@ class Coord:
                 # Suppression des doublons (points superposés dans la polyligne)
                 points_a_conserver = np.ediff1d(self.array['Xt'], to_begin=1.) != 0.
                 self.array = self.array[points_a_conserver]
+
+    def nb_var(self):
+        if self.values is None:
+            return 0
+        else:
+            return len(self.values.dtype.names)
 
     def compute_Xt(self):
         """
@@ -130,24 +134,12 @@ class Coord:
         self.array = append_fields(self.array, 'xp', xp, usemask=False)
 
     def convert_as_array(self):
-        """Returns a float 2D-array with X, Y and Z (it has to exist)"""
-        return np.column_stack((self.array['X'], self.array['Y'], self.array['Z']))
+        """Returns a float 2D-array with X, Y and Z"""
+        return np.column_stack((self.array['X'], self.array['Y'], self.values['Z']))
 
     def convert_as_linestring(self):
         """Returns a LineString object"""
         return LineString(self.convert_as_array())
-
-    def set_layers(self, z_values):
-        """Sets multiple variables"""
-        #TODO: purge z_labels and array attributs before appending? Or refactor method to `add`
-        z_labels = list(z_values.dtype.names)
-        for z_label in z_labels:
-            self.add_single_layer(z_label, z_values[z_label])
-
-    def add_single_layer(self, name, z_array):
-        """Add a new single variable"""
-        self.z_labels.append(name)
-        self.array = np.lib.recfunctions.append_fields(self.array, name, z_array, usemask=False)
 
 
 class ProfilTravers:
@@ -155,7 +147,7 @@ class ProfilTravers:
     ProfilTravers: représente un profil en travers avec éventuellement plusieurs variables en chacun de ses points
 
     ### Attributs
-    - id <integer>: identifiant unique (numérotation automatique commençant à 0)
+    - id <integer|str>: identifiant unique
     - label <str>: type de profil (`Profils en travers` ou `Épi`)
     - coord <Coord>: coordonnées (X et Y) avec toutes les variables
     - nb_points <int>: number of points
@@ -175,16 +167,18 @@ class ProfilTravers:
     - calcul_nb_pts_inter
     - change_coord
     """
-    def __init__(self, id, coord, z_values, label):
+    def __init__(self, id, coord, label='Profil en travers'):
         """
-        Créer un profil à partir d'un semis de points ordonnés (coordonnées X, Y, Z)
+        Créer un profil à partir d'un semis de points ordonnés (coordonnées X, Y)
         Aucune limite de lit n'est déclarée lorsque l'objet est créé
+
+        @param id <integer|str>: identifiant unique
+        @param label <str>: type de profil (`Profil en travers` ou `Épi`)
+        @param coords <[tuple]>: sequence of X and Y coordinates
         """
         self.id = id
         self.label = label
         self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y'])), ['Xt'])
-        self.coord.set_layers(z_values)
-
         self.nb_points = len(self.coord.array)
         self.geom = LineString(coord)  # FIXME: contient toujours les points doublons
 
@@ -197,7 +191,7 @@ class ProfilTravers:
     def _add_limit(self, id_ligne, Xt_profil, Xt_ligne, point):
         """Ajoute une nouvelle limite au profil"""
         z_values = {}
-        for label in self.coord.z_labels:
+        for label in self.coord.coord_labels:
             z_values[label] = np.interp(Xt_profil, self.coord.array['Xt'], self.coord.array[label])
         self.limites[id_ligne] = {'Xt_profil': Xt_profil, 'Xt_ligne': Xt_ligne,
                                   'X': point.x, 'Y': point.y, **z_values}
@@ -262,7 +256,7 @@ class ProfilTravers:
         @brief: Extraire les coordonnées d'une partie du profil
             Les points du profil compris entre les deux lits et avec éventuellement les points de bord interpolés
             /!\ id_lit_1 et id_lit_2 doivent être dans l'ordre Xt croissant (plante sinon)
-        @return <Lit>: avec les colonnes avec les colonnes ('X', 'Y', 'Z', 'Xt', 'xt')
+        @return <Lit>: avec les colonnes avec les colonnes ('X', 'Y', 'Xt', 'xt')
         """
         limit1 = self.get_limit_by_id(id_lit_1)
         limit2 = self.get_limit_by_id(id_lit_2)
@@ -297,8 +291,8 @@ class ProfilTravers:
             logger.debug("Veuillez vérifier ci-dessus, avec les limites suivantes :")
             logger.debug(limit1)
             logger.debug(limit2)
-            points_a_conserver = np.ediff1d(sub_coord['Xt'], to_begin=1.) != 0.
-            sub_coord = sub_coord[points_a_conserver]
+            points_to_keep = np.ediff1d(sub_coord['Xt'], to_begin=1.) != 0.
+            sub_coord = sub_coord[points_to_keep]
 
         return Lit(sub_coord, ['xt'])
 
@@ -318,12 +312,6 @@ class ProfilTravers:
         """
         dist_min_profil = self.geom.distance(other.geom)
         return ceil(dist_min_profil/pas_long) - 1
-
-    def change_coord(self, array):
-        self.coord.array = array
-        self.coord.compute_Xt()
-        self.nb_points = len(self.coord.array)
-        self.geom = self.coord.convert_as_linestring()
 
 
 def get_field_index(filename, field_id):
@@ -362,19 +350,21 @@ class SuiteProfilsTravers:
                 for i, line in enumerate(in_i3s.get_open_polylines()):
                     line_id = i if field_id is None else line.attributes()[0]  # Use `Value` if field is not None
                     z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars('Z'))
-                    if line.to_2d:
-                        line = line.to_2d()
-                    profils_travers.add_profile(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
+                    line = line.to_2d()
+                    profile = ProfilTravers(line_id, list(line.polyline().coords), label)
+                    profile.coord.values = z_array
+                    profils_travers.add_profile(profile)
         elif filename.endswith('.shp'):
             shp_type = shp.get_shape_type(filename)
             if shp_type in (shapefile.POLYLINEZ, shapefile.POLYLINEM):
                 field_id_index = get_field_index(filename, field_id)
                 for i, line in enumerate(shp.get_open_polylines(filename)):
                     line_id = i if field_id is None else line.attributes()[field_id_index]
-                    z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars('Z'))
-                    if line.to_2d:
-                        line = line.to_2d()
-                    profils_travers.add_profile(ProfilTravers(line_id, list(line.polyline().coords), z_array, label))
+                    z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars(['Z']))
+                    line = line.to_2d()
+                    profile = ProfilTravers(line_id, list(line.polyline().coords), label)
+                    profile.coord.values = z_array
+                    profils_travers.add_profile(profile)
             elif shp_type == shapefile.POINTZ:
                 field_id_index = get_field_index(filename, field_id)
                 field_indexes, field_names = [], []
@@ -385,62 +375,24 @@ class SuiteProfilsTravers:
                 coords, z_layers = [], []
                 last_point_id = None
                 for i, (point, attributes) in enumerate(shp.get_points(filename, with_z=True)):
-                    point_id = attributes[field_id_index]  # FIXME: raises exception if field_id_index is None!
+                    point_id = attributes[field_id_index]  # FIXME: should raise exception if field_id_index is None!
                     if i > 0 and point_id != last_point_id:
                         z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
-                        profils_travers.add_profile(ProfilTravers(last_point_id, coords, z_array, label))
+                        profile = ProfilTravers(last_point_id, coords, label)
+                        profile.coord.values = z_array
+                        profils_travers.add_profile(profile)
                         coords, z_layers = [], []
                     coords.append(point[:2])
                     z_layers.append((point[2],) + tuple(attributes[index] for index in field_indexes))
                     last_point_id = point_id
                 z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
-                profils_travers.add_profile(ProfilTravers(last_point_id, coords, z_array, label))
+                profile = ProfilTravers(last_point_id, coords, label)
+                profile.coord.values = z_array
+                profils_travers.add_profile(profile)
             else:
                 raise TatooineException("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
-        elif filename.endswith('.ST'):
-            with open(filename, 'r') as filein:
-                line = filein.readline()
-                eof = False
-                while not eof:  # end-of-file reached
-                    # Read header of the cross-section profile
-                    try:
-                        profile_id_str, _, _, nb_points_str, _, profile_name = line.split()
-                    except ValueError:
-                        raise GeometryRequestException('Section header not readable\n' + 'Guilty line:\n' + line)
-                    try:
-                        nb_points = int(nb_points_str)
-                        profile_id = int(profile_id_str)
-                    except ValueError:
-                        raise GeometryRequestException('Section header values could not be interpreted\n'
-                                                       'Guilty line:\n' + line)
-
-                    # Read coordinates of points
-                    coord = []
-                    z_list = []
-                    for i in range(nb_points):
-                        line = filein.readline()
-                        try:
-                            x, y, z = [float(v) for v in line.split()[:3]]
-                        except ValueError:
-                            raise GeometryRequestException('Coordinates are not readable\n'
-                                                           'Guilty line:\n' + line)
-                        coord.append((x, y))
-                        z_list.append((z,))
-                    profil = ProfilTravers(profile_id, coord, np.array(z_list, dtype=float_vars('Z')), profile_name)
-
-                    # Read footer of cross-section profile
-                    line = filein.readline()
-                    if line.strip() != ST_SECTION_ENDING.strip():
-                        raise GeometryRequestException('Section footer not found (check number of points)\n'
-                                                       'Guilty line:\n' + line)
-                    profils_travers.add_profile(profil)
-
-                    # Check end-of-file, otherwise it is a new section
-                    line = filein.readline()
-                    if line == '':
-                        eof = True
         else:
-            raise NotImplementedError("Seuls les formats i3s, shp et ST sont supportés pour les profils en travers")
+            raise NotImplementedError("Seuls les formats i3s, shp sont supportés pour les profils en travers")
         return profils_travers
 
     def __add__(self, other):
@@ -481,9 +433,9 @@ class SuiteProfilsTravers:
         logger.info("~> Vérifications non intersections des profils et des épis")
         intersections = get_intersections([profil.geom for profil in self])
         if intersections:
-            logger.debug("Les intersections suivantes sont trouvées")
+            logger.error("Les intersections suivantes sont trouvées")
             for (i, j) in intersections:
-                logger.debug("- entre '{}' et '{}'".format(self[i], self[j]))
+                logger.error("- entre '{}' et '{}'".format(self[i], self[j]))
             raise TatooineException("Des profils s'intersectent")
 
     def compute_dist_proj_axe(self, axe_geom, dist_max):
@@ -534,17 +486,6 @@ class SuiteProfilsTravers:
         for profil in self.suite:
             coord = profil.coord
             coord.add_single_layer(name, coord.array['Z'] - thickness)
-
-    # def add_linear_interp_layer(self, name, PK, thickness):
-    #     if len(PK) != len(thickness):
-    #         raise GeometryRequestException('Arrays have not the same length!')
-    #     if np.any(np.ediff1d(PK) < 0):
-    #         raise GeometryRequestException('PK are not strictly in increasing')
-    #     self.nb_layers += 1
-    #     self.layer_names.append(name)
-    #     for section in self.sections:
-    #         h = np.interp(section.PK, PK, thickness, right=0, left=0)
-    #         section.add_layer(h)
 
 
 class LigneContrainte:
@@ -639,24 +580,22 @@ class Lit(Coord):
     - interp_along_lit
     - interp_inter_lineaire
     """
-    def var2int(self):
-        return ['X', 'Y'] + self.z_labels
-
-    def interp_along_lit_auto(self, pas_trans):
+    def interp_coord_along_lit_auto(self, pas_trans):
         nb_pts_trans = ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
         Xt_adm_list = np.linspace(0., 1., num=nb_pts_trans)
-        return self.interp_along_lit(Xt_adm_list)
+        return self.interp_coord_along_lit(Xt_adm_list)
 
-    def interp_along_lit(self, Xt_adm_list):
+    def interp_coord_along_lit(self, Xt_adm_list):
         """
         @brief: Echantionnage du lit (interpolation sur vecteur adimensionné de Xt)
         @param Xt_adm_list <1D-array float>: distance adimensionnée (valeurs entre 0 et 1)
         """
         nb_pts_trans = len(Xt_adm_list)
-        array_ech = np.empty(nb_pts_trans, dtype=float_vars(self.var2int()))
-        for label in self.var2int():
-            array_ech[label] = np.interp(Xt_adm_list, self.array['xt'], self.array[label])
-        return array_ech
+        array = np.empty(nb_pts_trans, dtype=float_vars(Coord.XY + ['Xt', 'xt']))
+        for label in Coord.XY + ['Xt']:
+            array[label] = np.interp(Xt_adm_list, self.array['xt'], self.array[label])
+        array['xt'] = Xt_adm_list
+        return array
 
     def interp_inter_lineaire(self, other, coeff, nb_pts_trans):
         """
@@ -666,12 +605,14 @@ class Lit(Coord):
         """
         Xt_adm_list = np.linspace(0., 1., num=nb_pts_trans)
 
-        array_1 = self.interp_along_lit(Xt_adm_list)
-        array_2 = other.interp_along_lit(Xt_adm_list)
-        array = np.empty(nb_pts_trans, dtype=float_vars(self.var2int()))
+        array_1 = self.interp_coord_along_lit(Xt_adm_list)
+        array_2 = other.interp_coord_along_lit(Xt_adm_list)
 
-        for var in self.var2int():
+        array = np.empty(nb_pts_trans, dtype=float_vars(Coord.XY + ['Xt_amont', 'Xt_aval']))
+        for var in Coord.XY:
             array[var] = (1-coeff)*array_1[var] + coeff*array_2[var]
+        array['Xt_amont'] = array_1['Xt']
+        array['Xt_aval'] = array_2['Xt']
         return array
 
 
@@ -682,9 +623,8 @@ class MeshConstructor:
     ### Attributs
     - profils_travers <SuiteProfilsTravers>
     - pas_trans <float>: pas transversal (m)
-    - z_labels <[str]>: noms des variables d'intérêt
-    - var_for_Z <str>: nom de la variable à utiliser si le format de sortie n'a qu'un Z possible
-    - points: structured array with columns ['X', 'Y', 'profil', 'lit'] + z_labels
+    #TODO
+    - points: structured array with columns ['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl', 'zone', 'lit']
     - i_pt <int>: curseur pour repérer l'avancement
     - segments <2D-array int>: list of nodes numbers (0-indexed) to define constrainted segments
     - triangle <dict>: dictionary with 2 keys `vertices` (2D nodes) and `triangles` (connectivity table)
@@ -702,30 +642,35 @@ class MeshConstructor:
     - export_profiles
     - export_mesh
     """
-    POINTS_DTYPE = float_vars(['X', 'Y', 'profil']) + [(var, np.int) for var in ('lit', )]
+    POINTS_DTYPE = float_vars(['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + [(var, np.int) for var in ('zone', 'lit')]
 
     def __init__(self, profils_travers, pas_trans):
         self.profils_travers = profils_travers
         self.pas_trans = pas_trans
 
-        self.z_labels = profils_travers[0].coord.z_labels
-        self.var_for_Z = self.z_labels[0]  # first variable is used for Z if format requires it
-        self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE + float_vars(self.z_labels))
+        self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE)
+        self.nodes_values = np.empty([0, 0, 0], dtype=np.float)
         self.i_pt = int(-1)
         self.segments = np.empty([0, 2], dtype=np.int)
         self.triangle = None  # set by `build_mesh`
 
-    def add_points(self, coord, profil, lit):
+    def var_names(self):
+        return list(self.profils_travers[0].coord.values.dtype.names)
+
+    def add_points(self, coord, xl, index_zone, index_lit):
         """!
         @brief: Ajouter des sommets/noeuds
-        @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', ...] (voir POINTS_DTYPE)
+        @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', 'Xt_amont', 'Xt_aval']
         """
         new_coord = np.empty(len(coord), dtype=self.points.dtype)
-        for var in ['X', 'Y'] + self.z_labels:  # copy existing columns
-            new_coord[var] = coord[var]
         # FIXME: avoid copying in using np.lib.recfunctions.append_fields?
-        new_coord['profil'] = profil
-        new_coord['lit'] = lit
+        for var in ['X', 'Y', 'Xt_amont', 'Xt_aval']:  # copy existing columns
+            new_coord[var] = coord[var]
+        new_coord['zone'] = index_zone
+        new_coord['lit'] = index_lit
+        new_coord['Xl'] = self.profils_travers[index_zone].dist_proj_axe * (1 - xl) + \
+                          self.profils_travers[index_zone + 1].dist_proj_axe * xl
+        new_coord['xl'] = xl
         self.i_pt += len(new_coord)
         self.points = np.hstack((self.points, new_coord))
 
@@ -776,14 +721,21 @@ class MeshConstructor:
             first_lit = True
             for j, (id1, id2) in enumerate(zip(limites_id, limites_id[1:])):
                 lit = cur_profil.extraire_lit(id1, id2)
-                coord_int = lit.interp_along_lit_auto(self.pas_trans)
+                coord_int = lit.interp_coord_along_lit_auto(self.pas_trans)
 
                 if first_lit:
                     cur_profil.get_limit_by_id(id1)['id_pt'] = self.i_pt + 1
                 else:
                     coord_int = coord_int[1:]
 
-                self.add_points(coord_int, profil=cur_profil.dist_proj_axe, lit=j)
+                if i == 0:
+                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_amont', 'xt': 'Xt_aval'})
+                    coord_int['Xt_aval'] = 0.0  # arbitrary value
+                    self.add_points(coord_int, 0.0, i, j)
+                else:
+                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_aval', 'xt': 'Xt_amont'})
+                    coord_int['Xt_amont'] = 0.0  # arbitrary value
+                    self.add_points(coord_int, 1.0, i - 1, j)
 
                 cur_profil.get_limit_by_id(id2)['id_pt'] = self.i_pt
 
@@ -796,6 +748,13 @@ class MeshConstructor:
                     first_lit = False
 
     def build_interp(self, lignes_contraintes, pas_long, constant_ech_long):
+        """
+        Build interpolation, add points and segments
+
+        @param lignes_contraintes <[LigneContrainte]>: lignes de contrainte
+        @param pas_long <float>
+        @param constant_ech_long <bool>
+        """
         self.build_initial_profiles()
 
         ### BOUCLE SUR L'ESPACE INTER-PROFIL
@@ -858,18 +817,17 @@ class MeshConstructor:
                         P1 = Point(tuple(L1_coord_int[k]))
                         P2 = Point(tuple(L2_coord_int[k]))
 
-                        lit_int = Lit(lit_1.interp_inter_lineaire(lit_2, Xp,
-                                                                  ceil(P1.distance(P2)/self.pas_trans)+1),
-                                      ['Xt', 'xt'])
+                        array = lit_1.interp_inter_lineaire(lit_2, Xp, ceil(P1.distance(P2)/self.pas_trans)+1)
+                        lit_int = Lit(array, ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
-                        coord_int = lit_int.array[['X', 'Y'] + lit_int.z_labels]
+                        coord_int = lit_int.array[['X', 'Y', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt` and `xt`
                         pt_list_L1.append(self.i_pt + 1)
 
                         if not first_lit:
                             # ignore le 1er point car la ligne de contrainte a déjà été traitée
                             coord_int = coord_int[1:]
 
-                        self.add_points(coord_int, profil=dist_proj_axe, lit=j)
+                        self.add_points(coord_int, Xp, i, j)
 
                         pt_list_L2.append(self.i_pt)
 
@@ -884,17 +842,18 @@ class MeshConstructor:
                         first_lit = False
 
     def corr_bathy_on_epis(self, epis, dist_corr_epi):
+        raise NotImplementedError
         logger.info("~> Correction de la bathymétrie autour des épis")
-        if set(self.z_labels) != set(['Z']):
+        if self.var_names() != ['Z']:
             raise TatooineException("Impossible de corriger les épis sur les couches sédimentaires")
         for epi in epis:
             epi_geom = epi.coord.convert_as_linestring()
             for i, coord in enumerate(self.points):
-                pt_node = Point(tuple(coord[:3]))
+                pt_node = Point((coord['X'], coord['Y']))
                 if epi_geom.distance(pt_node) < dist_corr_epi:
                     Xt_proj = epi_geom.project(pt_node)
                     pt_proj = epi_geom.interpolate(Xt_proj)
-                    self.points['Z'][i] = pt_proj.z
+                    epi.coord.values['Z'][i] = pt_proj.z
 
     def build_mesh(self):
         logger.info("~> Calcul du maillage")
@@ -911,6 +870,8 @@ class MeshConstructor:
                 logger.error(new_points[np.isin(new_combined, diff)])
             raise TatooineException("Mesh is corrupted... %i vs %i nodes." % (
                 len(self.points), len(self.triangle['vertices'])))
+        if 'triangles' not in self.triangle:
+            raise TatooineException("Mesh was not generated, no triangle found!")
         logger.info(self.summary())
 
     def summary(self):
@@ -924,35 +885,49 @@ class MeshConstructor:
         if path.endswith('.xyz'):
             logger.info("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                np.savetxt(fileout, repack_fields(self.points[['X', 'Y', self.var_for_Z]]),
+                z_array = self.interp_from_profiles()[0, :]
+                np.savetxt(fileout, np.vstack((self.points['X'], self.points['Y'], z_array)).T,
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
         elif path.endswith('.shp'):
             logger.info("~> Exports en shp des points")
-            with shapefile.Writer(path, shapeType=shapefile.POINTZ) as w:
-                w.field('PK', 'N', decimal=6)
-                for name in self.z_labels:
-                    w.field(name, 'N', decimal=6)
-                for dist in np.unique(self.points['profil']):
-                    pos = self.points['profil'] == dist
-                    vars = self.points[pos].dtype.names
-                    for row in self.points[pos]:
-                        values = {key: value for key, value in zip(vars, row)}
-                        w.pointz(values['X'], values['Y'], values[self.var_for_Z])
-                        w.record(dist, *[values[name] for name in self.z_labels])
+            with shapefile.Writer(path, shapeType=shapefile.POINT) as w:
+                w.field('zone', 'N', decimal=6)
+                w.field('lit', 'N', decimal=6)
+                w.field('Xt_amont', 'N', decimal=6)
+                w.field('Xt_aval', 'N', decimal=6)
+                w.field('xl', 'N', decimal=6)
+                for row in self.points:
+                    w.point(row['X'], row['Y'])
+                    w.record(**{'zone': float(row['zone']), 'lit': float(row['lit']),
+                                'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xl': row['xl']})
         else:
             raise NotImplementedError("Seuls les formats shp et xyz sont supportés pour les semis de points")
+
+    def export_segments(self, path):
+        if path.endswith('.shp'):
+            logger.info("~> Exports en shp des segments")
+            with shapefile.Writer(path, shapeType=shapefile.POLYLINE) as w:
+                w.field('id_seg', 'N', decimal=6)
+                for i, (node1, node2) in enumerate(self.segments):
+                    point1 = self.points[node1]
+                    point2 = self.points[node2]
+                    w.line([[[point1['X'], point1['Y']], [point2['X'], point2['Y']]]])
+                    w.record(id_seg=i)
+        else:
+            raise NotImplementedError("Seul le format shp est supporté pour les segments")
 
     def export_profiles(self, path):
         """
         /!\ Pas cohérent si constant_ech_long est différent de True
         """
+        values = self.interp_from_profiles()
         if path.endswith('.georefC'):
             with open(path, 'w') as out_geo:
-                for dist in np.unique(self.points['profil']):
-                    pos = self.points['profil'] == dist
+                for dist in np.unique(self.points['Xl']):
+                    pos = self.points['Xl'] == dist
                     points = self.points[pos]
 
-                    # Compute Xt  (FIXME: rather keep from previous calculations...
+                    # Compute Xt  (FIXME: rather keep from previous calculations...)
                     Xt = np.sqrt(np.power(np.ediff1d(points['X'], to_begin=0.), 2) +
                                  np.power(np.ediff1d(points['Y'], to_begin=0.), 2))
                     Xt = Xt.cumsum()
@@ -962,17 +937,17 @@ class MeshConstructor:
                         if i == 0:
                             positions_str = ' %f %f %f %f' % (row['X'], row['Y'], points[-1]['X'], points[-1]['Y'])
                             positions_str += ' AXE %f %f' % (row['X'], row['Y'])  # FIXME: not the axis position...
-                            out_geo.write('Profil Bief_0 %s %f%s\n' % ('P' + str(dist), dist, positions_str))  # FIXME: fix profil name
+                            out_geo.write('Profil Bief_0 %s %f%s\n' % ('P' + str(dist), dist, positions_str))
 
-                        layers_str = ' ' + ' '.join([COURLIS_FLOAT_FMT % row[z_label]
-                                                     for z_label in self.z_labels])
+                        layers_str = ' ' + ' '.join([COURLIS_FLOAT_FMT % x for x in values[:, pos][:, i]])
+
                         out_geo.write('%f%s B %f %f\n' % (row['Xt'], layers_str, row['X'], row['Y']))
             return
 
         lines = []
-        for dist in np.unique(self.points['profil']):
+        for dist in np.unique(self.points['Xl']):
             pos = self.points['profil'] == dist
-            line = geometry.Polyline([(x, y, z) for x, y, z in self.points[pos][['X', 'Y', self.var_for_Z]]])
+            line = geometry.Polyline([(x, y, z) for (x, y), z in zip(self.points[pos][['X', 'Y']], values[0, :])])
             line.add_attribute(dist)
             lines.append(line)
 
@@ -981,12 +956,13 @@ class MeshConstructor:
                 out_i3s.write_header()
                 out_i3s.write_lines(lines, [l.attributes()[0] for l in lines])
         elif path.endswith('.shp'):
-            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, self.var_for_Z)
+            shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
         else:
             raise NotImplementedError("Seuls les formats i3s, georefC et shp (POLYLINEZ) sont supportés pour écrire le "
                                       "fichier de profils en travers")
 
     def export_mesh(self, path):
+        """TODO: export multiple variables in t3s and LandXML"""
         logger.info("~> Écriture du maillage")
 
         nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
@@ -1021,12 +997,14 @@ class MeshConstructor:
                 # Tableau des éléments (connectivité)
                 np.savetxt(fileout, self.triangle['triangles'] + 1, delimiter=' ', fmt='%i')
 
+            raise NotImplementedError
         elif path.endswith('.xml'):
             env = Environment(
                 loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
             template = env.get_template("LandXML_template.xml")
             template_render = template.render(
-                nodes=np.round(np.column_stack((self.triangle['vertices'], self.points[self.var_for_Z])), DIGITS),
+                nodes=np.round(np.column_stack((self.triangle['vertices'], self.interp_from_profiles()[0, :])),
+                               DIGITS),
                 ikle=self.triangle['triangles'] + 1
             )
 
@@ -1041,20 +1019,51 @@ class MeshConstructor:
                                                       lang=LANG)
                 output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
 
-                output_header.add_variable_from_ID('B')
-                for var_name in self.z_labels:
-                    if var_name.startswith('Z_'):
-                        output_header.add_variable_str(var_name, var_name, '')
+                for var in self.var_names():
+                    if var == 'Z':
+                        output_header.add_variable_from_ID('B')
+                    else:
+                        output_header.add_variable_str(var, var, '')
                 resout.write_header(output_header)
 
-                values = np.empty((output_header.nb_var, output_header.nb_nodes))
-                for i, var_ID in enumerate(output_header.var_IDs):
-                    z_label = 'Z' if var_ID == 'B' else var_ID
-                    values[i, :] = self.points[z_label].reshape((1, output_header.nb_nodes))
-                resout.write_entire_frame(output_header, 0, values)
+                resout.write_entire_frame(output_header, 0.0, self.interp_from_profiles())
 
         else:
             raise NotImplementedError("Seuls les formats t3d, xml et slf sont supportés pour les maillages")
+
+    def interp_from_profiles(self):
+        """Interpolate values from profiles"""
+        values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))
+        profile_prev = self.profils_travers[0]
+        for i_zone in np.unique(self.points['zone']):
+            filter_points = self.points['zone'] == i_zone
+            profile_next = self.profils_travers[i_zone + 1]
+            for i, var in enumerate(self.var_names()):
+                values_prev = np.interp(self.points['Xt_amont'][filter_points],
+                                        profile_prev.coord.array['Xt'], profile_prev.coord.values[var])
+                values_next = np.interp(self.points['Xt_aval'][filter_points],
+                                        profile_next.coord.array['Xt'], profile_next.coord.values[var])
+                values[i, filter_points] = values_prev * (1 - self.points['xl'][filter_points]) + \
+                                           values_next * self.points['xl'][filter_points]
+            profile_prev = profile_next
+        return values
+
+    @staticmethod
+    def get_merge_triangulation(mesh_constr_list):
+        """
+        Merge multiple distinct triangulations (no merge at boundaries or overlaps).
+        @param mesh_constr_list <[MeshConstructor]>: list of mesh constructors
+        """
+        out_tri = {}
+        for mesh_constr in mesh_constr_list:
+            if not out_tri:  # set initial values from first iteration
+                out_tri['triangles'] = mesh_constr.triangle['triangles']
+                out_tri['vertices'] = mesh_constr.triangle['vertices']
+            else:  # concatenate with current sub-mesh for next iterations
+                out_tri['triangles'] = np.vstack((out_tri['triangles'],
+                                                  out_tri['vertices'].shape[0] + mesh_constr.triangle['triangles']))
+                out_tri['vertices'] = np.vstack((out_tri['vertices'], mesh_constr.triangle['vertices']))
+        return out_tri
 
 
 class GeometryRequestException(Exception):

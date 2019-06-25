@@ -30,13 +30,12 @@ Format        | Lecture | Écriture | Extension | Sédiments
 BlueKenue     | X       | X        | *.i3s     | Non
 shp POINTZ    | X       | X        | *_pts.shp | Oui
 shp POLYLINEZ | X       | X        | *.shp     | Non
-Mage/RubarBE  | X       |          | *.ST      | Non
 georefC       |         | X        | *.georefC | Oui
 
 Les couches sédimentaires permettent de décrire les interfaces entre les couches et seul les formats
  "shp POINTZ" et georefC peuvent contenir ces informations.
 
-* cas des lignes (**i3s**, **shp**, **ST**, **georefC**)
+* cas des lignes (**i3s**, **shp**, **georefC**)
     * les profils ne sont pas nécessairement ordonnées, c'est l'axe hydraulique qui permet de les ré-ordonner
     * tous les profils sont décrits dans le même sens (rive gauche à droite, ou inversement)
 * cas des points (**_pts.shp**)
@@ -109,6 +108,5 @@ Si cet argument est renseigné, l'outil ajoutera un nombre de points constant lo
 Ainsi les points en sortie correspondront aux profils que le densificateur de profils aurait calculés.
 
 ## TODO
-* read "lignes contraintes" from ST files
 * add option to project per `Lit` for all profiles
 * possibilité de conserver les profils initiaux

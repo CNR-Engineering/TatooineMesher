@@ -38,49 +38,43 @@ def mesh_crue10_submodel_bathy(args):
 
     # Read SubModel from xml/shp files
     try:
-        model = SubModel(args.infile_etu, args.submodel_name)
-        model.read_drso(filter_branch_types=args.types_branches)
-        model.read_dptg()
-        model.read_shp_noeuds()
-        model.read_shp_traces_sections()
-        model.read_shp_branches()
+        submodel = SubModel(args.infile_etu, args.submodel_name)
+        submodel.read_all()
+        submodel.remove_sectioninterpolee()
+        submodel.normalize_geometry()
     except FileNotFoundError as e:
         logger.critical(e)
         sys.exit(1)
     except CrueError as e:
         logger.critical(e)
         sys.exit(2)
-    logger.info(model)
+    logger.info(submodel)
 
-    for branche in model.iter_on_branches():
-        branche.normalize_sections_xp()
-        if SHIFT_TRACE_TO_EXTERMITY:
-            branche.shift_sectionprofil_to_extremity()
-
-    model.convert_sectionidem_to_sectionprofil()
-    # model.write_shp_active_trace('export_tracesSections.shp')  # DEBUG
+    # submodel.write_shp_active_trace('export_tracesSections.shp')  # DEBUG
 
     triangles = {}
     mesh_constr = None
+    points = None
+    suite = []
 
     id_profile = 0
-    for i, branche in enumerate(model.iter_on_branches()):
+    for i, branche in enumerate(submodel.iter_on_branches()):
         logger.info("===== TRAITEMENT DE LA BRANCHE %s =====" % branche.id)
         axe = branche.geom
         try:
             profils_travers = SuiteProfilsTravers()
             for section in branche.sections:
                 if isinstance(section, SectionProfil):
-                    coords = list(section.get_coord_3d())
-                    z_array = np.array([(coord[2],) for coord in coords], dtype=float_vars('Z'))
-                    profils_travers.add_profile(ProfilTravers(id_profile, [(coord[0], coord[1]) for coord in coords],
-                                                              z_array, section.id))
+                    coords = list(section.get_coord(add_z=True))
+                    profile = ProfilTravers(section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
+                    profile.coord.values = np.array([(coord[2],) for coord in coords], dtype=float_vars('Z'))
+                    profils_travers.add_profile(profile)
                     id_profile += 1
 
             if len(profils_travers) >= 2:
                 profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                 profils_travers.check_intersections()
-                profils_travers.sort_by_dist()
+                # profils_travers.sort_by_dist() useless because profiles are already sorted
                 lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
                 profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
@@ -89,11 +83,14 @@ def mesh_crue10_submodel_bathy(args):
 
                 if args.outfile_mesh is not None:
                     mesh_constr.build_mesh()
+                    suite += mesh_constr.profils_travers
                     if not triangles:  # set initial values from first iteration
                         points = mesh_constr.points
                         triangles['triangles'] = mesh_constr.triangle['triangles']
                         triangles['vertices'] = mesh_constr.triangle['vertices']
                     else:  # concatenate with current sub-mesh for next iterations
+                        last_zone = points['zone'][-1]
+                        mesh_constr.points['zone'] += last_zone + 2
                         points = np.hstack((points, mesh_constr.points))
                         triangles['triangles'] = np.vstack(
                             (triangles['triangles'],
@@ -107,6 +104,7 @@ def mesh_crue10_submodel_bathy(args):
         logger.info("\n")
 
     mesh_constr.points = points
+    mesh_constr.profils_travers = suite
     mesh_constr.triangle = triangles
 
     logger.info(mesh_constr.summary())  # General information about the merged mesh
