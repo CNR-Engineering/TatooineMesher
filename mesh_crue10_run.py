@@ -52,7 +52,7 @@ def mesh_crue10_run(args):
 
     id_profile = 0
     for i, branche in enumerate(submodel.iter_on_branches()):
-        if branche.type == 20 and i<10:
+        if branche.type == 20:
             logger.info("===== TRAITEMENT DE LA BRANCHE %s =====" % branche.id)
             axe = branche.geom
             try:
