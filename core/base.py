@@ -630,6 +630,7 @@ class MeshConstructor:
     - triangle <dict>: dictionary with 2 keys `vertices` (2D nodes) and `triangles` (connectivity table)
 
     ### Méthodes
+    - var_names
     - add_points
     - add_segments
     - add_segments_from_node_list
@@ -638,9 +639,13 @@ class MeshConstructor:
     - build_interp
     - corr_bathy_on_epis
     - build_mesh
+    - summary
     - export_points
+    - export_segments
     - export_profiles
     - export_mesh
+    - interp_from_profiles
+    - get_merge_triangulation
     """
     POINTS_DTYPE = float_vars(['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + [(var, np.int) for var in ('zone', 'lit')]
 
@@ -1046,6 +1051,16 @@ class MeshConstructor:
                 values[i, filter_points] = values_prev * (1 - self.points['xl'][filter_points]) + \
                                            values_next * self.points['xl'][filter_points]
             profile_prev = profile_next
+        return values
+
+    def interp_from_value_at_profiles(self, values_at_profiles):
+        """Interpolate values from profiles"""
+        nb_var = values_at_profiles.shape[1]
+        values = np.zeros((nb_var, len(self.points)))
+        xl_all = self.points['zone'] + self.points['xl']
+        for i_var in range(nb_var):
+            values[i_var, :] = np.interp(xl_all, np.arange(len(self.profils_travers), dtype=np.float),
+                                         values_at_profiles[:, i_var])
         return values
 
     @staticmethod

@@ -17,19 +17,18 @@ Particularités :
     - la traceProfil est copiée (si la SectionProfil originale est au même endroit) ou regénérée (perpendiculaire à la branche)
 - Les branches non actives sont également traitées
 """
-from crue10.emh.branche import Branche
-from crue10.emh.section import SectionProfil
-from crue10.emh.submodel import SubModel
-from crue10.utils import CrueError, logger
 import numpy as np
 import sys
 from time import perf_counter
 
+from crue10.emh.branche import Branche
+from crue10.emh.section import SectionProfil
+from crue10.emh.submodel import SubModel
+from crue10.utils import CrueError, logger
+
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers, ProfilTravers
 from core.utils import float_vars, logger, set_logger_level, TatooineException
-
-SHIFT_TRACE_TO_EXTERMITY = True
 
 
 def mesh_crue10_submodel_bathy(args):
@@ -42,6 +41,7 @@ def mesh_crue10_submodel_bathy(args):
         submodel.read_all()
         submodel.remove_sectioninterpolee()
         submodel.normalize_geometry()
+        # submodel.write_shp_active_trace('export_tracesSections.shp')  # DEBUG
     except FileNotFoundError as e:
         logger.critical(e)
         sys.exit(1)
@@ -49,8 +49,6 @@ def mesh_crue10_submodel_bathy(args):
         logger.critical(e)
         sys.exit(2)
     logger.info(submodel)
-
-    # submodel.write_shp_active_trace('export_tracesSections.shp')  # DEBUG
 
     triangles = {}
     mesh_constr = None
@@ -74,7 +72,7 @@ def mesh_crue10_submodel_bathy(args):
             if len(profils_travers) >= 2:
                 profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                 profils_travers.check_intersections()
-                # profils_travers.sort_by_dist() useless because profiles are already sorted
+                # profils_travers.sort_by_dist() is useless because profiles are already sorted
                 lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
                 profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
