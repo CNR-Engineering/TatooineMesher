@@ -20,6 +20,7 @@ import os.path
 from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
 from pyteltools.slf import Serafin
+from pyteltools.slf.variable.variables_2d import basic_2D_vars_IDs
 import shapefile
 from shapely.geometry import LineString, MultiPoint, Point
 import time
@@ -1071,8 +1072,8 @@ class MeshConstructor:
                 output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
 
                 for var in self.var_names():
-                    if var == 'Z':
-                        output_header.add_variable_from_ID('B')
+                    if var in basic_2D_vars_IDs:
+                        output_header.add_variable_from_ID(var)
                     else:
                         output_header.add_variable_str(var, var, '')
                 resout.write_header(output_header)

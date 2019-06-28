@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 Génération d'une surface 2D à partir de la géométrie d'un sous-modèle Crue10
+Variables :
+* FOND
+* FROTTEMENT
+* IS_LIT_ACTIF
 
 Branches: seules les branches avec des SectionProfil et/ou SectionIdem sont traitées :
 - EMHBrancheSaintVenant (type 20)
@@ -28,10 +32,10 @@ from crue10.utils import CrueError, logger
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers, ProfilTravers
-from core.utils import float_vars, logger, set_logger_level, TatooineException
+from core.utils import logger, set_logger_level, TatooineException
 
 
-def mesh_crue10_submodel_bathy(args):
+def mesh_crue10_submodel(args):
     set_logger_level(args.verbose)
     t1 = perf_counter()
 
@@ -65,7 +69,13 @@ def mesh_crue10_submodel_bathy(args):
                 if isinstance(section, SectionProfil):
                     coords = list(section.get_coord(add_z=True))
                     profile = ProfilTravers(section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
-                    profile.coord.values = np.array([(coord[2],) for coord in coords], dtype=float_vars('Z'))
+                    z = np.array([coord[2] for coord in coords])
+                    is_bed_active = section.get_is_bed_active_array()
+                    mean_strickler = section.get_friction_coeff_array()
+                    profile.coord.values = np.core.records.fromarrays(
+                        np.column_stack((z, is_bed_active, mean_strickler)).T,
+                        names=['B', 'IS BED ACTIVE', 'W']
+                    )
                     profils_travers.add_profile(profile)
                     id_profile += 1
 
@@ -146,4 +156,4 @@ parser_outfiles.add_argument("--outfile_semis", help="semis de points au format 
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    mesh_crue10_submodel_bathy(args)
+    mesh_crue10_submodel(args)
