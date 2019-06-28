@@ -12,7 +12,8 @@ Remarque : les abscisses recalculées par l'outil sont identiques à celle donn�
 from collections import OrderedDict
 from copy import deepcopy
 from jinja2 import Environment, FileSystemLoader
-from math import ceil
+import math
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy.lib.recfunctions import append_fields, rename_fields
 import os.path
@@ -311,7 +312,52 @@ class ProfilTravers:
         @param pas_long <float>: pas longitudinal (en m)
         """
         dist_min_profil = self.geom.distance(other.geom)
-        return ceil(dist_min_profil/pas_long) - 1
+        return math.ceil(dist_min_profil/pas_long) - 1
+
+    def get_segments(self):
+        x = self.coord.array['Xt']
+        z = self.coord.values['Z']
+        return [(xx, zz) for xx, zz in zip(x, z)]
+
+    def get_angles(self):
+        angles = []
+        for i, ((x1, z1), (x2, z2), (x3, z3)) in enumerate(zip(self.get_segments(), self.get_segments()[1:],
+                                                               self.get_segments()[2:])):
+            angle = math.degrees(math.atan2(z3 - z2, x3 - x2) - math.atan2(z1 - z2, x1 - x2))
+            if angle < 0:
+                angle += 360
+            angles.append(angle - 180)
+        return angles
+
+    def export_plot_travers(self, fig_path, overwrite=False):
+        x = self.coord.array['Xt']
+        z = self.coord.values['Z']
+
+        fig, ax1 = plt.subplots(figsize=(16, 9))
+
+        ax1.set_xlabel('Xt (m)')
+
+        color = 'tab:red'
+        ax1.set_ylabel('Z', color=color)
+        ax1.tick_params(axis='y', labelcolor=color)
+        ax1.plot(x, z, marker='o', color=color, label='Z')
+
+        color = 'tab:green'
+        for limit_name, limit in self.limites.items():
+            ax1.axvline(x=limit['Xt_profil'], linestyle='-', color=color)
+
+        color = 'tab:blue'
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('Angles (°)', color=color)
+        ax2.plot(x[1:-1], self.get_angles(), color=color, label='Angles')
+        ax2.tick_params(axis='y', labelcolor=color)
+        ax2.set_ylim(-180, 180)
+        plt.yscale('symlog')
+
+        if overwrite and os.path.exists(fig_path):
+            os.remove(fig_path)
+        plt.legend(loc='upper center')
+        plt.savefig(fig_path, dpi=400)
 
 
 def get_field_index(filename, field_id):
@@ -581,7 +627,7 @@ class Lit(Coord):
     - interp_inter_lineaire
     """
     def interp_coord_along_lit_auto(self, pas_trans):
-        nb_pts_trans = ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
+        nb_pts_trans = math.ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
         Xt_adm_list = np.linspace(0., 1., num=nb_pts_trans)
         return self.interp_coord_along_lit(Xt_adm_list)
 
@@ -807,7 +853,7 @@ class MeshConstructor:
                                                 .format(id2))
 
                     if not constant_ech_long:
-                        nb_pts_inter = ceil(min(dXp_L1, dXp_L2)/pas_long) - 1
+                        nb_pts_inter = math.ceil(min(dXp_L1, dXp_L2)/pas_long) - 1
                         Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
                     L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1,
@@ -822,7 +868,7 @@ class MeshConstructor:
                         P1 = Point(tuple(L1_coord_int[k]))
                         P2 = Point(tuple(L2_coord_int[k]))
 
-                        array = lit_1.interp_inter_lineaire(lit_2, Xp, ceil(P1.distance(P2)/self.pas_trans)+1)
+                        array = lit_1.interp_inter_lineaire(lit_2, Xp, math.ceil(P1.distance(P2)/self.pas_trans)+1)
                         lit_int = Lit(array, ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
                         coord_int = lit_int.array[['X', 'Y', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt` and `xt`

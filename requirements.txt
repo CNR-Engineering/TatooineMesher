@@ -1,4 +1,5 @@
 jinja2
+matplotlib
 numpy
 pyshp>=2.0
 shapely
