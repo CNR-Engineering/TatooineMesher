@@ -31,9 +31,10 @@ def linear_interpolator_and_mesher(args):
     profils_travers.sort_by_dist()
 
     if args.infile_lignes_contraintes is None:
-        lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
+        lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers, args.interp_lignes_contraintes)
     else:
-        lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes)
+        lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes,
+                                                                 args.interp_lignes_contraintes)
     profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
     mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
@@ -64,6 +65,9 @@ parser_epis.add_argument("--dist_corr_epi", type=float,
                          help="distance autour des épis (en général inférieur aux pas trans. et long.)")
 parser.add_argument("--constant_ech_long", help="méthode de calcul du nombre de profils interpolés entre profils : "
                     "par profil (constant, ie True) ou par lit (variable, ie False)", action='store_true')
+parser.add_argument("--interp_lignes_contraintes",
+                    help="méthode d'interpolation des coordonnées des lignes de contraintes",
+                    default='LINEAR', choices=('LINEAR', 'FINITE_DIFF', 'CARDINAL'))
 # Outputs
 parser_outfiles = parser.add_argument_group('Fichiers de sortie')
 parser_outfiles.add_argument("--outfile_mesh", help="maillage au format : slf (Telemac), t3s (BlueKenue),"

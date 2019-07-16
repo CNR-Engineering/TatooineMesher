@@ -26,6 +26,7 @@ from shapely.geometry import LineString, MultiPoint, Point
 import time
 import triangle
 
+from .spline_cubic_hermite import CubicHermiteSpline
 from .utils import float_vars, get_intersections, logger, strictly_increasing, TatooineException
 
 
@@ -547,7 +548,7 @@ class LigneContrainte:
     ### Méthodes
     - coord_sampling_along_line
     """
-    def __init__(self, id, coord):
+    def __init__(self, id, coord, interp_coord=None):
         """
         Création d'un objet LigneContrainte à partir des coordoonées de la ligne
         coord: liste de tuples (de taille 2)
@@ -556,13 +557,25 @@ class LigneContrainte:
         self.id = id
         self.nb_points = len(coord)
         self.coord = np.array(coord)
+        Xt = np.sqrt(np.power(np.ediff1d(self.coord[:, 0], to_begin=0.), 2) +
+                     np.power(np.ediff1d(self.coord[:, 1], to_begin=0.), 2))
+        self.Xt = Xt.cumsum()
         self.geom = LineString(coord)
+
+        if interp_coord == 'LINEAR':
+            self.interp = self.build_interp_linear()
+        else:
+            if interp_coord == 'CARDINAL':
+                tan_method = CubicHermiteSpline.CARDINAL
+            else:
+                tan_method = CubicHermiteSpline.FINITE_DIFF
+            self.interp = self.build_interp_chs(tan_method)
 
     def __repr__(self):
         return "Ligne de contrainte n°{} ({} points)".format(self.id, self.nb_points)
 
     @staticmethod
-    def get_lines_from_file(filename):
+    def get_lines_from_file(filename, interp_coord=None):
         """
         Extraction d'objects LineString à partir d'un fichier i2s
         Info: value is ignored
@@ -574,24 +587,51 @@ class LigneContrainte:
                 with bk.Read(filename) as in_i2s:
                     in_i2s.read_header()
                     for i, line in enumerate(in_i2s.get_open_polylines()):
-                        lines.append(LigneContrainte(i, list(line.polyline().coords)))
+                        lines.append(LigneContrainte(i, list(line.polyline().coords), interp_coord))
             elif filename.endswith('.shp'):
                 if shp.get_shape_type(filename) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
                     raise TatooineException("Le fichier %s n'est pas de type POLYLINE[ZM]" % filename)
                 for i, line in enumerate(shp.get_open_polylines(filename)):
-                    lines.append(LigneContrainte(i, list(line.polyline().coords)))
+                    lines.append(LigneContrainte(i, list(line.polyline().coords), interp_coord))
             else:
                 raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour les lignes de contrainte")
         return lines
 
     @staticmethod
-    def get_lines_from_profils(profils_en_travers):
+    def get_lines_from_profils(profils_en_travers, interp_coord=None):
         first_coords = []
         last_coords = []
         for profil in profils_en_travers:
             first_coords.append(profil.geom.coords[0][:2])
             last_coords.append(profil.geom.coords[-1][:2])
-        return [LigneContrainte(0, first_coords), LigneContrainte(1, last_coords)]
+        return [LigneContrainte(0, first_coords, interp_coord),
+                LigneContrainte(1, last_coords, interp_coord)]
+
+    def build_interp_linear(self):
+        def interp_xy_linear(Xt_new):
+            coord_int = []
+            for dist in Xt_new:
+                point = self.geom.interpolate(dist)
+                coord_int.append(point.coords[0][:2])
+            return np.array(coord_int, dtype=float_vars(['X', 'Y']))
+        return interp_xy_linear
+
+    def build_interp_chs(self, tan_method):
+        spline_x = CubicHermiteSpline()  # x = spline_x(Xt)
+        spline_y = CubicHermiteSpline()  # y = spline_y(Xt)
+
+        spline_x.Initialize(np.vstack((self.Xt, self.coord[:, 0])).T, tan_method=tan_method)
+        spline_y.Initialize(np.vstack((self.Xt, self.coord[:, 1])).T, tan_method=tan_method)
+
+        def interp_xy_chs(Xt_new):
+            coord_int = []
+            for dist in Xt_new:
+                x = spline_x.evaluate(dist)
+                y = spline_y.evaluate(dist)
+                coord_int.append((x, y))
+            np_coord_int = np.array(coord_int, dtype=float_vars(['X', 'Y']))
+            return np_coord_int
+        return interp_xy_chs
 
     def coord_sampling_along_line(self, Xp1, Xp2, Xp_adm_int):
         """
@@ -602,14 +642,7 @@ class LigneContrainte:
         """
         # Construction de la liste des abscisses cibles (en mètres)
         Xp = (1 - Xp_adm_int)*Xp1 + Xp_adm_int*Xp2
-
-        coord_int = []
-        for Xp_cur in Xp:
-            point = self.geom.interpolate(Xp_cur)
-            coord_int.append(point.coords[0][:2])
-        np_coord_int = np.array(coord_int, dtype=float_vars(['X', 'Y']))
-
-        return np_coord_int
+        return self.interp(Xp)
 
 
 class Lit(Coord):
@@ -1043,13 +1076,12 @@ class MeshConstructor:
 
             with open(path, mode='ab') as fileout:
                 # Tableau des coordonnées (x, y, z)
-                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.points[self.var_for_Z])), delimiter=' ',
-                           fmt='%.{}f'.format(DIGITS))
+                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.interp_from_profiles()[0, :])),
+                           delimiter=' ', fmt='%.{}f'.format(DIGITS))
 
                 # Tableau des éléments (connectivité)
                 np.savetxt(fileout, self.triangle['triangles'] + 1, delimiter=' ', fmt='%i')
 
-            raise NotImplementedError
         elif path.endswith('.xml'):
             env = Environment(
                 loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
