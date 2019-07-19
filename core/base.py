@@ -222,6 +222,7 @@ class ProfilTravers:
                 Xt_profil = self.geom.project(intersection)
                 Xt_ligne = ligne_contrainte.geom.project(intersection)
                 self._add_limit(ligne_contrainte.id, Xt_profil, Xt_ligne, intersection)
+
             else:
                 raise TatooineException("L'intersection entre '{}' et '{}' ne correspond pas rien!".format(
                     self, ligne_contrainte))
@@ -322,13 +323,14 @@ class ProfilTravers:
         return [(xx, zz) for xx, zz in zip(x, z)]
 
     def get_angles(self):
+        """Angles are within range [0, 360]"""
         angles = []
         for i, ((x1, z1), (x2, z2), (x3, z3)) in enumerate(zip(self.get_segments(), self.get_segments()[1:],
                                                                self.get_segments()[2:])):
             angle = math.degrees(math.atan2(z3 - z2, x3 - x2) - math.atan2(z1 - z2, x1 - x2))
             if angle < 0:
                 angle += 360
-            angles.append(angle - 180)
+            angles.append(angle)
         return angles
 
     def export_plot_travers(self, fig_path, overwrite=False):
