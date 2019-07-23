@@ -7,7 +7,6 @@ Remarque :
 * intégration possible de seuils (correction locale de la bathymétrie)
 """
 from time import perf_counter
-
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
 from core.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
@@ -37,7 +36,7 @@ def linear_interpolator_and_mesher(args):
                                                                  args.interp_lignes_contraintes)
     profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
-    mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
+    mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.interp_trans_values)
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
     # mesh_constr.export_segments('check_segments.shp')  # DEBUG
 
@@ -68,6 +67,9 @@ parser.add_argument("--constant_ech_long", help="méthode de calcul du nombre de
 parser.add_argument("--interp_lignes_contraintes",
                     help="méthode d'interpolation des coordonnées des lignes de contraintes",
                     default='LINEAR', choices=('LINEAR', 'FINITE_DIFF', 'CARDINAL'))
+parser.add_argument("--interp_trans_values",
+                    help="méthode d'interpolation transversale pour les valeurs",
+                    default='LINEAR', choices=('LINEAR', 'B-SPLINE', 'AKIMA', 'PCHIP', 'CUBIC_SPLINE'))
 # Outputs
 parser_outfiles = parser.add_argument_group('Fichiers de sortie')
 parser_outfiles.add_argument("--outfile_mesh", help="maillage au format : slf (Telemac), t3s (BlueKenue),"

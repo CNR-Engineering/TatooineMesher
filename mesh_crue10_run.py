@@ -112,7 +112,7 @@ def mesh_crue10_run(args):
     pos_variables = [run.variables['Section'].index(var) for var in VARIABLES]
     pos_sections_list = [run.emh['Section'].index(profil.id) for profil in mesh_constr.profils_travers]
 
-    z_bottom = mesh_constr.interp_from_profiles()[0, :]
+    z_bottom = mesh_constr.interp_values_from_profiles()[0, :]
     with Serafin.Write(args.outfile_mesh, LANG, overwrite=True) as resout:
         output_header = Serafin.SerafinHeader(title='%s (written by tatooinemesher)' % os.path.basename(args.outfile_mesh),
                                               lang=LANG)
@@ -131,7 +131,7 @@ def mesh_crue10_run(args):
                 variables_at_profiles = res[pos_sections_list, :][:, pos_variables]
 
                 # Interpolate between sections
-                values = mesh_constr.interp_from_value_at_profiles(variables_at_profiles)
+                values = mesh_constr.interp_from_values_at_profiles(variables_at_profiles)
 
                 # Add additional variables
                 # H = water depth = Z - Zf and clip below 0m (avoid negative values)
@@ -151,7 +151,7 @@ def mesh_crue10_run(args):
                 variables_at_profiles = res[pos_sections_list, :][:, pos_variables]
 
                 # Interpolate between sections
-                values = mesh_constr.interp_from_value_at_profiles(variables_at_profiles)
+                values = mesh_constr.interp_from_values_at_profiles(variables_at_profiles)
 
                 # Add additional variables
                 # H = water depth = Z - Zf and clip below 0m (avoid negative values)
