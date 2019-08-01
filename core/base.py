@@ -355,7 +355,7 @@ class ProfilTravers:
         color = 'tab:blue'
         ax2 = ax1.twinx()
         ax2.set_ylabel('Angles (°)', color=color)
-        ax2.plot(x[1:-1], self.get_angles(), color=color, label='Angles')
+        ax2.plot(x[1:-1], np.array(self.get_angles()) - 180.0, color=color, label='Angles')
         ax2.tick_params(axis='y', labelcolor=color)
         ax2.set_ylim(-180, 180)
         plt.yscale('symlog')
@@ -571,8 +571,10 @@ class LigneContrainte:
         else:
             if interp_coord == 'CARDINAL':
                 tan_method = CubicHermiteSpline.CARDINAL
-            else:
+            elif interp_coord == 'FINITE_DIFF':
                 tan_method = CubicHermiteSpline.FINITE_DIFF
+            else:
+                raise NotImplementedError
             self.interp = self.build_interp_chs(tan_method)
 
     def __repr__(self):
@@ -1142,7 +1144,7 @@ class MeshConstructor:
                     values_next = interpolate.splev(self.points['Xt_aval'][filter_points], splrep_next)
 
                 elif self.interp_trans_values == 'AKIMA':
-                    values_prev = interpolate.Akima1DInterpolator(profile_prev.coord.array['Xt'],  profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
+                    values_prev = interpolate.Akima1DInterpolator(profile_prev.coord.array['Xt'],profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
                     values_next = interpolate.Akima1DInterpolator(profile_next.coord.array['Xt'], profile_next.coord.values[var])(self.points['Xt_aval'][filter_points])
 
                 elif self.interp_trans_values == 'PCHIP':
