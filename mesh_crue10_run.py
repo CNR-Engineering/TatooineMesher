@@ -14,15 +14,16 @@ import numpy as np
 import os.path
 from pyteltools.slf import Serafin
 import sys
+from time import perf_counter
 
 from crue10.emh.section import SectionProfil
-from crue10.emh.submodel import SubModel
 from crue10.run import CrueRun
+from crue10.study import Study
 from crue10.utils import CrueError
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, ProfilTravers, SuiteProfilsTravers
-from core.utils import float_vars, logger, TatooineException
+from core.utils import float_vars, logger, set_logger_level, TatooineException
 
 
 LANG = 'fr'  # for variable names
@@ -31,19 +32,26 @@ ADDITIONAL_VARIABLES = ['Zf', 'H']  # Hardcoded below
 
 
 def mesh_crue10_run(args):
-    # Read SubModel from xml/shp files
+    set_logger_level(args.verbose)
+    t1 = perf_counter()
+
+    # Read the model and its submodels from xml/shp files
     try:
-        submodel = SubModel(args.infile_etu, args.submodel_name)
-        submodel.read_all()
-        submodel.remove_sectioninterpolee()
-        submodel.normalize_geometry()
+        study = Study(args.infile_etu)
+        model = study.get_model(args.model_name)
+        model.read_all()
+        logger.info(model)
+        for submodel in model.submodels:
+            submodel.remove_sectioninterpolee()
+            submodel.normalize_geometry()
+            logger.info(submodel.summary())
     except FileNotFoundError as e:
         logger.critical(e)
         sys.exit(1)
     except CrueError as e:
         logger.critical(e)
         sys.exit(2)
-    logger.info(submodel)
+    logger.info(model)
 
     triangles = {}
     mesh_constr = None
@@ -51,7 +59,7 @@ def mesh_crue10_run(args):
     suite = []
 
     id_profile = 0
-    for i, branche in enumerate(submodel.iter_on_branches()):
+    for i, branche in enumerate(model.get_branche_list()):
         if branche.type == 20:
             logger.info("===== TRAITEMENT DE LA BRANCHE %s =====" % branche.id)
             axe = branche.geom
@@ -65,28 +73,32 @@ def mesh_crue10_run(args):
                         profils_travers.add_profile(profile)
                         id_profile += 1
 
-                profils_travers.compute_dist_proj_axe(axe, args.dist_max)
-                profils_travers.check_intersections()
-                # profils_travers.sort_by_dist() is useless because profiles are already sorted
-                lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
-                profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
+                if len(profils_travers) >= 2:
+                    profils_travers.compute_dist_proj_axe(axe, args.dist_max)
+                    profils_travers.check_intersections()
+                    # profils_travers.sort_by_dist() is useless because profiles are already sorted
+                    lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
+                    profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
-                mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
-                mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
-                mesh_constr.build_mesh()
-                suite += mesh_constr.profils_travers
-                if not triangles:  # set initial values from first iteration
-                    points = mesh_constr.points
-                    triangles['triangles'] = mesh_constr.triangle['triangles']
-                    triangles['vertices'] = mesh_constr.triangle['vertices']
-                else:  # concatenate with current sub-mesh for next iterations
-                    last_zone = points['zone'][-1]
-                    mesh_constr.points['zone'] += last_zone + 2
-                    points = np.hstack((points, mesh_constr.points))
-                    triangles['triangles'] = np.vstack(
-                        (triangles['triangles'],
-                         triangles['vertices'].shape[0] + mesh_constr.triangle['triangles']))
-                    triangles['vertices'] = np.vstack((triangles['vertices'], mesh_constr.triangle['vertices']))
+                    mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
+                    mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
+
+                    mesh_constr.build_mesh()
+                    suite += mesh_constr.profils_travers
+                    if not triangles:  # set initial values from first iteration
+                        points = mesh_constr.points
+                        triangles['triangles'] = mesh_constr.triangle['triangles']
+                        triangles['vertices'] = mesh_constr.triangle['vertices']
+                    else:  # concatenate with current sub-mesh for next iterations
+                        last_zone = points['zone'][-1]
+                        mesh_constr.points['zone'] += last_zone + 2
+                        points = np.hstack((points, mesh_constr.points))
+                        triangles['triangles'] = np.vstack(
+                            (triangles['triangles'],
+                             triangles['vertices'].shape[0] + mesh_constr.triangle['triangles']))
+                        triangles['vertices'] = np.vstack((triangles['vertices'], mesh_constr.triangle['vertices']))
+                else:
+                    logger.info("Branche ignorée par manque de sections")
             except TatooineException as e:
                 logger.critical("/!\ Branche ignorée à cause d'une erreur bloquante :")
                 logger.critical(e.message)
@@ -103,7 +115,7 @@ def mesh_crue10_run(args):
     logger.info(run.summary())
 
     # Check result consistency
-    missing_sections = submodel.get_missing_active_sections(run.emh['Section'])
+    missing_sections = model.get_missing_active_sections(run.emh['Section'])
     if missing_sections:
         logger.error("Missing sections:\n%s" % missing_sections)
         return
@@ -161,12 +173,15 @@ def mesh_crue10_run(args):
                 values = np.vstack((values, z_bottom, depth))
                 resout.write_entire_frame(output_header, time, values)
 
+    t2 = perf_counter()
+    logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
+
 
 parser = MyArgParse(description=__doc__)
 # Inputs
-parser_infiles = parser.add_argument_group("Sous-modèle et run Crue10")
+parser_infiles = parser.add_argument_group("Modèle et run Crue10 à traiter")
 parser_infiles.add_argument("infile_etu", help="fichier d'étude Crue10 (etu.xml)")
-parser_infiles.add_argument("submodel_name", help="nom du sous-modèle")
+parser_infiles.add_argument("model_name", help="nom du modèle")
 parser_infiles.add_argument("infile_rcal", help="fichier de résultat (rcal.xml)")
 parser_infiles.add_argument("--calc_trans", help="nom du calcul transitoire à traiter "
                                                  "(sinon considère tous les calculs permanents)")
