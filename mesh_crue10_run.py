@@ -90,7 +90,7 @@ def mesh_crue10_run(args):
                         triangles['triangles'] = mesh_constr.triangle['triangles']
                         triangles['vertices'] = mesh_constr.triangle['vertices']
                     else:  # concatenate with current sub-mesh for next iterations
-                        last_zone = points['zone'][-1]
+                        last_zone = points['zone'].max()
                         mesh_constr.points['zone'] += last_zone + 2
                         points = np.hstack((points, mesh_constr.points))
                         triangles['triangles'] = np.vstack(

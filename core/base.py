@@ -604,7 +604,7 @@ class LigneContrainte:
         return lines
 
     @staticmethod
-    def get_lines_from_profils(profils_en_travers, interp_coord=None):
+    def get_lines_from_profils(profils_en_travers, interp_coord='LINEAR'):
         first_coords = []
         last_coords = []
         for profil in profils_en_travers:
@@ -983,16 +983,19 @@ class MeshConstructor:
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
         elif path.endswith('.shp'):
             logger.info("~> Exports en shp des points")
+            z_array = self.interp_values_from_profiles()[0, :]
             with shapefile.Writer(path, shapeType=shapefile.POINT) as w:
                 w.field('zone', 'N', decimal=6)
                 w.field('lit', 'N', decimal=6)
                 w.field('Xt_amont', 'N', decimal=6)
                 w.field('Xt_aval', 'N', decimal=6)
                 w.field('xl', 'N', decimal=6)
-                for row in self.points:
+                w.field('Z', 'N', decimal=6)
+                for row, z in zip(self.points, z_array):
                     w.point(row['X'], row['Y'])
                     w.record(**{'zone': float(row['zone']), 'lit': float(row['lit']),
-                                'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xl': row['xl']})
+                                'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xl': row['xl'],
+                                'Z': z})
         else:
             raise NotImplementedError("Seuls les formats shp et xyz sont supportés pour les semis de points")
 
@@ -1126,9 +1129,9 @@ class MeshConstructor:
     def interp_values_from_profiles(self):
         """Interpolate values from profiles"""
         values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))  # y
-        profile_prev = self.profils_travers[0]
         for i_zone in np.unique(self.points['zone']):
             filter_points = self.points['zone'] == i_zone
+            profile_prev = self.profils_travers[i_zone]
             profile_next = self.profils_travers[i_zone + 1]
             for i, var in enumerate(self.var_names()):
                 if self.interp_trans_values == 'LINEAR':
@@ -1144,15 +1147,15 @@ class MeshConstructor:
                     values_next = interpolate.splev(self.points['Xt_aval'][filter_points], splrep_next)
 
                 elif self.interp_trans_values == 'AKIMA':
-                    values_prev = interpolate.Akima1DInterpolator(profile_prev.coord.array['Xt'],profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
+                    values_prev = interpolate.Akima1DInterpolator(profile_prev.coord.array['Xt'], profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
                     values_next = interpolate.Akima1DInterpolator(profile_next.coord.array['Xt'], profile_next.coord.values[var])(self.points['Xt_aval'][filter_points])
 
                 elif self.interp_trans_values == 'PCHIP':
-                    values_prev = interpolate.pchip_interpolate(profile_prev.coord.array['Xt'],  profile_prev.coord.values[var], self.points['Xt_amont'][filter_points])
+                    values_prev = interpolate.pchip_interpolate(profile_prev.coord.array['Xt'], profile_prev.coord.values[var], self.points['Xt_amont'][filter_points])
                     values_next = interpolate.pchip_interpolate(profile_next.coord.array['Xt'], profile_next.coord.values[var], self.points['Xt_aval'][filter_points])
 
                 elif self.interp_trans_values == 'CUBIC_SPLINE':
-                    values_prev = interpolate.CubicSpline(profile_prev.coord.array['Xt'],  profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
+                    values_prev = interpolate.CubicSpline(profile_prev.coord.array['Xt'], profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
                     values_next = interpolate.CubicSpline(profile_next.coord.array['Xt'], profile_next.coord.values[var])(self.points['Xt_aval'][filter_points])
 
                 else:
@@ -1160,7 +1163,6 @@ class MeshConstructor:
 
                 values[i, filter_points] = values_prev * (1 - self.points['xl'][filter_points]) + \
                                            values_next * self.points['xl'][filter_points]
-            profile_prev = profile_next
         return values
 
     def interp_from_values_at_profiles(self, values_at_profiles):
