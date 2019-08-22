@@ -95,7 +95,12 @@ class Coord:
         Xt = np.sqrt(np.power(np.ediff1d(self.array['X'], to_begin=0.), 2) +
                      np.power(np.ediff1d(self.array['Y'], to_begin=0.), 2))
         Xt = Xt.cumsum()
-        self.array = append_fields(self.array, 'Xt', Xt, usemask=False)
+
+        # Update or append `Xt` array column
+        if 'Xt' in self.array.dtype.fields:
+            self.array['Xt'] = Xt
+        else:
+            self.array = append_fields(self.array, 'Xt', Xt, usemask=False)
 
     def compute_xt(self):
         """
@@ -107,7 +112,12 @@ class Coord:
         else:
             xt = np.empty(len(self.array))
             xt.fill(-999.)
-        self.array = append_fields(self.array, 'xt', xt, usemask=False)
+
+        # Update or append `xt` array column
+        if 'xt' in self.array.dtype.fields:
+            self.array['xt'] = xt
+        else:
+            self.array = append_fields(self.array, 'xt', xt, usemask=False)
 
     def move_between_targets(self, p1, p2):
         """
@@ -319,6 +329,28 @@ class ProfilTravers:
         dist_min_profil = self.geom.distance(other.geom)
         return math.ceil(dist_min_profil/pas_long) - 1
 
+    def project_straight_line(self):
+        """Planar projection on a straight line joining first and ending point of the cross-section"""
+        if self.limites:
+            raise TatooineException("Limits have to be set after calling to project_straight_line!")
+
+        # Build straight line
+        first_point = (self.coord.array['X'][0], self.coord.array['Y'][0])
+        last_point = (self.coord.array['X'][-1], self.coord.array['Y'][-1])
+        line = LineString((first_point, last_point))
+
+        # Update X, Y, Xt columns in self.coord.array
+        for row in self.coord.array:
+            point = Point((row['X'], row['Y']))
+            dist = line.project(point)
+            point_project = line.interpolate(dist)
+            row['X'] = point_project.x
+            row['Y'] = point_project.y
+        self.coord.compute_Xt()
+
+        # Update geom
+        self.geom = self.coord.convert_as_linestring()
+
     def get_segments(self):
         x = self.coord.array['Xt']
         z = self.coord.values['Z']
@@ -394,7 +426,7 @@ class SuiteProfilsTravers:
         self.suite.append(profile)
 
     @staticmethod
-    def from_file(filename, label, field_id=None):
+    def from_file(filename, label, field_id=None, project_straight_line=False):
         profils_travers = SuiteProfilsTravers()
         if filename.endswith('.i3s'):
             with bk.Read(filename) as in_i3s:
@@ -445,6 +477,10 @@ class SuiteProfilsTravers:
                 raise TatooineException("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
         else:
             raise NotImplementedError("Seuls les formats i3s, shp sont supportés pour les profils en travers")
+
+        if project_straight_line:
+            for profile in profils_travers:
+                profile.project_straight_line()
         return profils_travers
 
     def __add__(self, other):

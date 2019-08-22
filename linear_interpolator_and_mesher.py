@@ -19,11 +19,13 @@ def linear_interpolator_and_mesher(args):
     logger.info("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
     profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
-                                                    field_id=args.attr_profils_travers)
+                                                    field_id=args.attr_profils_travers,
+                                                    project_straight_line=args.project_straight_line)
 
     has_epi = args.infile_epis is not None and args.dist_corr_epi is not None
     if has_epi:
-        epis = SuiteProfilsTravers.from_file(args.infile_epis, "Épi", field_id=args.attr_epis)
+        epis = SuiteProfilsTravers.from_file(args.infile_epis, "Épi", field_id=args.attr_epis,
+                                             project_straight_line=args.project_straight_line)
 
     profils_travers.compute_dist_proj_axe(axe, args.dist_max)
     profils_travers.check_intersections()

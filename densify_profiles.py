@@ -16,7 +16,8 @@ def densify_profiles(args):
     logger.info("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
     profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
-                                                    field_id=args.attr_profils_travers)
+                                                    field_id=args.attr_profils_travers,
+                                                    project_straight_line=args.project_straight_line)
 
     profils_travers.compute_dist_proj_axe(axe, args.dist_max)
     profils_travers.check_intersections()

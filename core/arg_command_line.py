@@ -29,6 +29,8 @@ class MyArgParse(argparse.ArgumentParser):
         group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralemen")
         self.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                          "pour les limites de lits (en m)", default=0.01)
+        self.add_argument("--project_straight_line", action='store_true',
+                          help="modifie les profils avec une projection plane sur la ligne berge-à-berge")
 
     def parse_args(self, *args, **kwargs):
         """Check argument compatibility before execution"""
