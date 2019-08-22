@@ -1,5 +1,7 @@
 import argparse
 
+from core.utils import TatooineException
+
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
     pass
@@ -21,7 +23,16 @@ class MyArgParse(argparse.ArgumentParser):
         parser_infiles.add_argument("infile_profils_travers", help="fichier d'entrée de profils en travers (i3s ou shp)")
         self.add_argument("--infile_lignes_contraintes", help="fichier d'entrée de lignes de contrainte (i2s ou shp)")
         self.add_argument("--attr_profils_travers", help="attribut pour identifier les profils en travers")
-        self.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)", default=5)
-        self.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)", default=3.5)
+        self.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)")
+        group = self.add_mutually_exclusive_group(required=True)
+        group.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)")
+        group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralemen")
         self.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                          "pour les limites de lits (en m)", default=0.01)
+
+    def parse_args(self, *args, **kwargs):
+        """Check argument compatibility before execution"""
+        args = super(MyArgParse, self).parse_args(*args, **kwargs)
+        if args.nb_pts_trans is not None and args.infile_lignes_contraintes is not None:
+            raise TatooineException("Arguments `--nb_pts_trans` and `--infile_lignes_contraintes` are not compatible!")
+        return args

@@ -36,7 +36,7 @@ def linear_interpolator_and_mesher(args):
                                                                  args.interp_lignes_contraintes)
     profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
-    mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.interp_trans_values)
+    mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.nb_pts_trans, args.interp_trans_values)
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
     # mesh_constr.export_segments('check_segments.shp')  # DEBUG
 

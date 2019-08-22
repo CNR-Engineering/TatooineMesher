@@ -658,7 +658,6 @@ class Lit(Coord):
 
     ### Attributs
     - coord
-    - nb_pts_trans
 
     ### Méthodes
     Toutes ces méthodes retournent un array avec les colonnes VARS2INT
@@ -666,8 +665,9 @@ class Lit(Coord):
     - interp_along_lit
     - interp_coord_linear
     """
-    def interp_coord_along_lit_auto(self, pas_trans):
-        nb_pts_trans = math.ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
+    def interp_coord_along_lit_auto(self, pas_trans, nb_pts_trans=None):
+        if nb_pts_trans is None:
+            nb_pts_trans = math.ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
         Xt_adm_list = np.linspace(0., 1., num=nb_pts_trans)
         return self.interp_coord_along_lit(Xt_adm_list)
 
@@ -710,6 +710,7 @@ class MeshConstructor:
     ### Attributs
     - profils_travers <SuiteProfilsTravers>
     - pas_trans <float>: pas transversal (m)
+    - nb_pts_trans <int>: nombre de noeuds transversalement
     #TODO
     - points: structured array with columns ['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl', 'zone', 'lit']
     - i_pt <int>: curseur pour repérer l'avancement
@@ -736,9 +737,10 @@ class MeshConstructor:
     """
     POINTS_DTYPE = float_vars(['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + [(var, np.int) for var in ('zone', 'lit')]
 
-    def __init__(self, profils_travers, pas_trans, interp_trans_values='LINEAR'):
+    def __init__(self, profils_travers, pas_trans=None, nb_pts_trans=None, interp_trans_values='LINEAR'):
         self.profils_travers = profils_travers
         self.pas_trans = pas_trans
+        self.nb_pts_trans = nb_pts_trans
         self.interp_trans_values = interp_trans_values
 
         self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE)
@@ -814,7 +816,7 @@ class MeshConstructor:
             first_lit = True
             for j, (id1, id2) in enumerate(zip(limites_id, limites_id[1:])):
                 lit = cur_profil.extraire_lit(id1, id2)
-                coord_int = lit.interp_coord_along_lit_auto(self.pas_trans)
+                coord_int = lit.interp_coord_along_lit_auto(self.pas_trans, self.nb_pts_trans)
 
                 if first_lit:
                     cur_profil.get_limit_by_id(id1)['id_pt'] = self.i_pt + 1
@@ -910,7 +912,11 @@ class MeshConstructor:
                         P1 = Point(tuple(L1_coord_int[k]))
                         P2 = Point(tuple(L2_coord_int[k]))
 
-                        array = lit_1.interp_coord_linear(lit_2, Xp, math.ceil(P1.distance(P2) / self.pas_trans) + 1)
+                        if self.nb_pts_trans is None:
+                            nb_pts_trans = math.ceil(P1.distance(P2) / self.pas_trans) + 1
+                        else:
+                            nb_pts_trans = self.nb_pts_trans
+                        array = lit_1.interp_coord_linear(lit_2, Xp, nb_pts_trans)
                         lit_int = Lit(array, ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
                         coord_int = lit_int.array[['X', 'Y', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt` and `xt`

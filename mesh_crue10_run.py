@@ -80,7 +80,7 @@ def mesh_crue10_run(args):
                     lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
                     profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
-                    mesh_constr = MeshConstructor(profils_travers, args.pas_trans)
+                    mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.nb_pts_trans)
                     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
 
                     mesh_constr.build_mesh()
