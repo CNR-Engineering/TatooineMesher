@@ -152,6 +152,7 @@ def mesh_crue10_run(args):
                 # Merge and write values
                 values = np.vstack((values, z_bottom, depth))
                 resout.write_entire_frame(output_header, 3600.0 * i, values)
+
         else:
             res_trans = run.get_calc_trans(args.calc_trans)
             logger.info("Calcul transitoire %s" % args.calc_trans)
@@ -187,10 +188,12 @@ parser_infiles.add_argument("--calc_trans", help="nom du calcul transitoire à t
                                                  "(sinon considère tous les calculs permanents)")
 # Mesh parameters
 parser_mesh = parser.add_argument_group("Paramètres pour la génération du maillage 2D")
-parser_mesh.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)", default=5)
-parser_mesh.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)", default=3.5)
 parser_mesh.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                         "pour les limites de lits (en m)", default=0.01)
+parser.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)")
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)")
+group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralemen")
 parser_mesh.add_argument("--constant_ech_long",
                          help="méthode de calcul du nombre de profils interpolés entre profils : "
                               "par profil (constant, ie True) ou par lit (variable, ie False)",
