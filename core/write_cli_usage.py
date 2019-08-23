@@ -26,7 +26,7 @@ class CommandLineScript:
     def help_msg(self):
         """Returns help message with description and usage"""
         mod = importlib.import_module('%s' % self.name)
-        return getattr(mod, 'parser').format_help()
+        return getattr(mod, 'parser').format_help().replace(os.path.basename(__file__), os.path.basename(self.path))
 
 
 # Build sorted list of CLI scripts
