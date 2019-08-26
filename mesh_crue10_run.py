@@ -101,8 +101,7 @@ def mesh_crue10_run(args):
                     profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                     profils_travers.check_intersections()
                     # profils_travers.sort_by_dist() is useless because profiles are already sorted
-                    lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
-                    profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
+                    lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers)
 
                     mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.nb_pts_trans)
                     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)

@@ -24,7 +24,7 @@ def densify_profiles(args):
     profils_travers.sort_by_dist()
 
     if args.infile_lignes_contraintes is None:
-        lignes_contraintes = LigneContrainte.get_lines_from_profils(profils_travers)
+        lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers)
     else:
         lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes)
     profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)

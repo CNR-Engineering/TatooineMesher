@@ -21,6 +21,7 @@ from pyteltools.geom import BlueKenue as bk, Shapefile as shp
 from pyteltools.geom import geometry
 from pyteltools.slf import Serafin
 from pyteltools.slf.variable.variables_2d import basic_2D_vars_IDs
+from scipy import interpolate
 import shapefile
 from shapely.geometry import LineString, MultiPoint, Point
 import time
@@ -29,7 +30,6 @@ import triangle
 from .spline_cubic_hermite import CubicHermiteSpline
 from .utils import float_vars, get_intersections, logger, strictly_increasing, TatooineException
 
-from scipy import interpolate
 
 
 DIGITS = 4  # for csv and xml exports
@@ -518,13 +518,13 @@ class SuiteProfilsTravers:
             logger.debug("{} limites trouvées avec les lignes {}".format(len(limits), list(limits)))
 
     def check_intersections(self):
+        """Display warning with intersections details"""
         logger.info("~> Vérifications non intersections des profils et des épis")
         intersections = get_intersections([profil.geom for profil in self])
         if intersections:
-            logger.error("Les intersections suivantes sont trouvées")
+            logger.warn("Les intersections suivantes sont trouvées")
             for (i, j) in intersections:
-                logger.error("- entre '{}' et '{}'".format(self[i], self[j]))
-            raise TatooineException("Des profils s'intersectent")
+                logger.warn("- entre '{}' et '{}'".format(self[i], self[j]))
 
     def compute_dist_proj_axe(self, axe_geom, dist_max):
         """
@@ -533,6 +533,7 @@ class SuiteProfilsTravers:
         @param dist_max <float>: distance de tolérance pour détecter des intersections
         """
         logger.info("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
+        to_keep_list = []
         for profil in self:
             profil_geom = profil.geom
             if profil_geom.intersects(axe_geom):
@@ -549,9 +550,13 @@ class SuiteProfilsTravers:
                         if dist < dist_max:
                             profil.dist_proj_axe = 0.0 if pos == 0 else axe_geom.length
             if profil.dist_proj_axe == -1:
-                # TODO 1: Ignore these profiles properly
-                raise TatooineException("'{}' n'intersecte pas l'axe (distance = {}m)".format(
-                                        profil, profil.geom.distance(axe_geom)))
+                logger.warn("{} n'intersecte pas l'axe (distance = {}m) et est ignoré".format(
+                    profil, profil.geom.distance(axe_geom)))
+                to_keep_list.append(False)
+            else:
+                to_keep_list.append(True)
+
+        self.suite = [p for p, to_keep in zip(self.suite, to_keep_list) if to_keep]
 
     def sort_by_dist(self):
         self.suite = sorted(self.suite, key=lambda x: x.dist_proj_axe)
@@ -640,14 +645,24 @@ class LigneContrainte:
         return lines
 
     @staticmethod
-    def get_lines_from_profils(profils_en_travers, interp_coord='LINEAR'):
+    def get_lines_and_set_limits_from_profils(profils_en_travers, interp_coord='LINEAR'):
+        # Build lines from cross-section extremities
         first_coords = []
         last_coords = []
-        for profil in profils_en_travers:
-            first_coords.append(profil.geom.coords[0][:2])
-            last_coords.append(profil.geom.coords[-1][:2])
-        return [LigneContrainte(0, first_coords, interp_coord),
-                LigneContrainte(1, last_coords, interp_coord)]
+        for profile in profils_en_travers:
+            first_coords.append(profile.geom.coords[0][:2])
+            last_coords.append(profile.geom.coords[-1][:2])
+        lines = [LigneContrainte(0, first_coords, interp_coord),
+                 LigneContrainte(1, last_coords, interp_coord)]
+
+        # Set limits
+        for id_line, line in enumerate(lines):
+            for profile, Xt_ligne in zip(profils_en_travers, line.Xt):
+                Xt_profil = profile.coord.array['Xt'][0] if id_line == 0 else profile.coord.array['Xt'][-1]
+                intersection = profile.geom.interpolate(Xt_profil)
+                profile._add_limit(id_line, Xt_profil, Xt_ligne, intersection)
+
+        return lines
 
     def build_interp_linear(self):
         def interp_xy_linear(Xt_new):
@@ -731,7 +746,7 @@ class Lit(Coord):
         array_1 = self.interp_coord_along_lit(Xt_adm_list)
         array_2 = other.interp_coord_along_lit(Xt_adm_list)
 
-        array = np.empty(nb_pts_trans, dtype=float_vars(Coord.XY + ['Xt_amont', 'Xt_aval']))
+        array = np.empty(nb_pts_trans, dtype=float_vars(Coord.XY + ['xt', 'Xt_amont', 'Xt_aval']))
         for var in Coord.XY:
             array[var] = (1 - coeff)*array_1[var] + coeff*array_2[var]
         array['Xt_amont'] = array_1['Xt']
@@ -758,7 +773,8 @@ class MeshConstructor:
     - add_points
     - add_segments
     - add_segments_from_node_list
-    - export_as_dict
+    - export_triangulation_dict
+    - export_floworiented_triangulation_dict
     - build_initial_profiles
     - build_interp
     - corr_bathy_on_epis
@@ -771,7 +787,8 @@ class MeshConstructor:
     - interp_values_from_profiles
     - get_merge_triangulation
     """
-    POINTS_DTYPE = float_vars(['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + [(var, np.int) for var in ('zone', 'lit')]
+    POINTS_DTYPE = float_vars(['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + \
+                              [(var, np.int) for var in ('zone', 'lit')]
 
     def __init__(self, profils_travers, pas_trans=None, nb_pts_trans=None, interp_trans_values='LINEAR'):
         self.profils_travers = profils_travers
@@ -793,9 +810,14 @@ class MeshConstructor:
         @brief: Ajouter des sommets/noeuds
         @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', 'Xt_amont', 'Xt_aval']
         """
+        if coord['xt'].min() != coord['xt'].max():
+            pass
+        else:
+            print("ERROR")
+
         new_coord = np.empty(len(coord), dtype=self.points.dtype)
         # FIXME: avoid copying in using np.lib.recfunctions.append_fields?
-        for var in ['X', 'Y', 'Xt_amont', 'Xt_aval']:  # copy existing columns
+        for var in ['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']:  # copy existing columns
             new_coord[var] = coord[var]
         new_coord['zone'] = index_zone
         new_coord['lit'] = index_lit
@@ -820,11 +842,19 @@ class MeshConstructor:
         new_segments = np.column_stack((node_list[:-1], node_list[1:]))
         self.segments = np.vstack((self.segments, new_segments))
 
-    def export_as_dict(self):
+    def export_triangulation_dict(self):
         """
-        @brief: Exporter les données pour triangle.triangulate
+        @brief: Export triangulation with vertices in cartesian coordinates
         """
         return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
+                'segments': self.segments}
+
+    def export_floworiented_triangulation_dict(self):
+        """
+        @brief: Export triangulation with vertices in flow-oriented coordinates
+        """
+        return {'vertices': np.array(np.column_stack((self.points['xt'] + self.points['lit'],
+                                                      self.points['xl']))),
                 'segments': self.segments}
 
     def build_initial_profiles(self):
@@ -860,12 +890,12 @@ class MeshConstructor:
                     coord_int = coord_int[1:]
 
                 if i == 0:
-                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_amont', 'xt': 'Xt_aval'})
-                    coord_int['Xt_aval'] = 0.0  # arbitrary value
+                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_amont'})
+                    coord_int = append_fields(coord_int, 'Xt_aval', np.zeros(len(coord_int)), usemask=False)
                     self.add_points(coord_int, 0.0, i, j)
                 else:
-                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_aval', 'xt': 'Xt_amont'})
-                    coord_int['Xt_amont'] = 0.0  # arbitrary value
+                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_aval'})
+                    coord_int = append_fields(coord_int, 'Xt_amont', np.zeros(len(coord_int)), usemask=False)
                     self.add_points(coord_int, 1.0, i - 1, j)
 
                 cur_profil.get_limit_by_id(id2)['id_pt'] = self.i_pt
@@ -955,7 +985,7 @@ class MeshConstructor:
                         array = lit_1.interp_coord_linear(lit_2, Xp, nb_pts_trans)
                         lit_int = Lit(array, ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
-                        coord_int = lit_int.array[['X', 'Y', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt` and `xt`
+                        coord_int = lit_int.array[['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt`
                         pt_list_L1.append(self.i_pt + 1)
 
                         if not first_lit:
@@ -992,8 +1022,10 @@ class MeshConstructor:
 
     def build_mesh(self):
         logger.info("~> Calcul du maillage")
-        tri = self.export_as_dict()
+        #DEBUG tri = self.export_floworiented_triangulation_dict()
+        tri = self.export_triangulation_dict()
         self.triangle = triangle.triangulate(tri, opts='p')
+        #DEBUG self.triangle['vertices'] = self.export_triangulation_dict()['vertices']  # overwrite by cartesian coordinates
         if len(self.points) != len(self.triangle['vertices']):
             if len(self.points) < len(self.triangle['vertices']):
                 logger.error("New nodes are:")
