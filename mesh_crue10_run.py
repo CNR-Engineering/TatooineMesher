@@ -247,7 +247,7 @@ parser_mesh.add_argument("--dist_max", type=float, help="distance de recherche m
 parser.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)")
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)")
-group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralemen")
+group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralement")
 parser_mesh.add_argument("--constant_ech_long",
                          help="méthode de calcul du nombre de profils interpolés entre profils : "
                               "par profil (constant, ie True) ou par lit (variable, ie False)",

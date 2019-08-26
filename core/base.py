@@ -34,7 +34,6 @@ from .utils import float_vars, get_intersections, logger, strictly_increasing, T
 
 DIGITS = 4  # for csv and xml exports
 LANG = 'fr'  # for variable names
-ST_SECTION_ENDING = '     999.9990     999.9990     999.9990 '
 COURLIS_FLOAT_FMT = '%.6f'
 
 
