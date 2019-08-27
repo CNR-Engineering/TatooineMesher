@@ -25,6 +25,7 @@ from pyteltools.slf import Serafin
 import sys
 from time import perf_counter
 
+from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
 from crue10.run import CrueRun
 from crue10.study import Study
@@ -62,10 +63,10 @@ def mesh_crue10_run(args):
 
     id_profile = 0
     for i, branche in enumerate(model.get_branche_list()):
-        # Ignore branch if pattern_branchs is set and do not match with current branch name
-        if args.pattern_branchs is not None:
+        # Ignore branch if branch_patterns is set and do not match with current branch name
+        if args.branch_patterns is not None:
             ignore = True
-            for pattern in args.pattern_branchs:
+            for pattern in args.branch_patterns:
                 if pattern in branche.id:
                     ignore = False
                     break
@@ -97,8 +98,8 @@ def mesh_crue10_run(args):
                         profils_travers.add_profile(profile)
                         id_profile += 1
 
+                profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                 if len(profils_travers) >= 2:
-                    profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                     profils_travers.check_intersections()
                     # profils_travers.sort_by_dist() is useless because profiles are already sorted
                     lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers)
@@ -106,7 +107,7 @@ def mesh_crue10_run(args):
                     mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.nb_pts_trans)
                     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
 
-                    mesh_constr.build_mesh()
+                    mesh_constr.build_mesh(True)
                     suite += mesh_constr.profils_travers
                     if not triangles:  # set initial values from first iteration
                         points = mesh_constr.points
@@ -128,7 +129,7 @@ def mesh_crue10_run(args):
             logger.info("\n")
 
     if points is None:
-        raise CrueError("Aucun point à traiter, adaptez l'option `--pattern_branchs`")
+        raise CrueError("Aucun point à traiter, adaptez l'option `--branch_patterns`")
 
     mesh_constr.points = points
     mesh_constr.profils_travers = suite
@@ -144,8 +145,7 @@ def mesh_crue10_run(args):
         # Check result consistency
         missing_sections = model.get_missing_active_sections(run.emh['Section'])
         if missing_sections:
-            logger.error("Sections manquantes :\n%s" % missing_sections)
-            return
+            raise CrueError("Sections manquantes :\n%s" % missing_sections)
 
         # Subset results to get requested variables at active sections
         varnames_1d = run.variables['Section']
@@ -237,7 +237,11 @@ parser_infiles.add_argument("model_name", help="nom du modèle")
 parser_infiles.add_argument("--infile_rcal", help="fichier de résultat (rcal.xml)")
 parser_infiles.add_argument("--calc_trans", help="nom du calcul transitoire à traiter "
                                                  "(sinon considère tous les calculs permanents)")
-parser_infiles.add_argument("--pattern_branchs", nargs='+', default=None,
+# Branch parameters
+parser_branch = parser.add_argument_group("Paramètres pour choisir les branches à traiter")
+parser_branch.add_argument("--branch_types_filter", nargs='+', default=Branche.TYPES_WITH_LENGTH,
+                            help="types des branches à traiter")
+parser_branch.add_argument("--branch_patterns", nargs='+', default=None,
                             help="chaîne(s) de caractères pour ne conserver que les branches dont le nom contient"
                                  " une de ces expressions")
 # Mesh parameters

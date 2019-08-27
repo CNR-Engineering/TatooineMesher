@@ -58,7 +58,7 @@ class Coord:
 
     def __init__(self, array, vars2add, remove_duplicates=False):
         """
-        @param array: structured array. `X`, `Y` are compulsary but other variables (such as Z) and distances are optional
+        @param array: structured array. `X`, `Y` are compulsory but other variables (such as Z) and distances are optional
         @param var2add <[str]>: list including eventually `Xt` and/or `xt` top compute them if they are not already present
         @param remove_duplicates <bool>: remove consecutive duplicated points
         """
@@ -809,11 +809,6 @@ class MeshConstructor:
         @brief: Ajouter des sommets/noeuds
         @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', 'Xt_amont', 'Xt_aval']
         """
-        if coord['xt'].min() != coord['xt'].max():
-            pass
-        else:
-            print("ERROR")
-
         new_coord = np.empty(len(coord), dtype=self.points.dtype)
         # FIXME: avoid copying in using np.lib.recfunctions.append_fields?
         for var in ['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']:  # copy existing columns
@@ -852,8 +847,9 @@ class MeshConstructor:
         """
         @brief: Export triangulation with vertices in flow-oriented coordinates
         """
-        return {'vertices': np.array(np.column_stack((self.points['xt'] + self.points['lit'],
-                                                      self.points['xl']))),
+        u = self.points['Xt_amont'] * (1 - self.points['xl']) + self.points['Xt_aval'] * self.points['xl']
+        v = self.points['Xl']
+        return {'vertices': np.array(np.column_stack((u, v))),
                 'segments': self.segments}
 
     def build_initial_profiles(self):
@@ -1019,12 +1015,15 @@ class MeshConstructor:
                     pt_proj = epi_geom.interpolate(Xt_proj)
                     epi.coord.values['Z'][i] = pt_proj.z
 
-    def build_mesh(self):
+    def build_mesh(self, in_floworiented_crs=False):
         logger.info("~> Calcul du maillage")
-        #DEBUG tri = self.export_floworiented_triangulation_dict()
-        tri = self.export_triangulation_dict()
-        self.triangle = triangle.triangulate(tri, opts='p')
-        #DEBUG self.triangle['vertices'] = self.export_triangulation_dict()['vertices']  # overwrite by cartesian coordinates
+        if in_floworiented_crs:
+            tri = self.export_floworiented_triangulation_dict()
+            self.triangle = triangle.triangulate(tri, opts='p')
+            self.triangle['vertices'] = self.export_triangulation_dict()['vertices']  # overwrite by cartesian coordinates
+        else:
+            tri = self.export_triangulation_dict()
+            self.triangle = triangle.triangulate(tri, opts='p')
         if len(self.points) != len(self.triangle['vertices']):
             if len(self.points) < len(self.triangle['vertices']):
                 logger.error("New nodes are:")
@@ -1062,13 +1061,14 @@ class MeshConstructor:
                 w.field('lit', 'N', decimal=6)
                 w.field('Xt_amont', 'N', decimal=6)
                 w.field('Xt_aval', 'N', decimal=6)
+                w.field('xt', 'N', decimal=6)
                 w.field('xl', 'N', decimal=6)
                 w.field('Z', 'N', decimal=6)
                 for row, z in zip(self.points, z_array):
                     w.point(row['X'], row['Y'])
                     w.record(**{'zone': float(row['zone']), 'lit': float(row['lit']),
-                                'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xl': row['xl'],
-                                'Z': z})
+                                'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xt': row['xt'],
+                                'xl': row['xl'], 'Z': z})
         else:
             raise NotImplementedError("Seuls les formats shp et xyz sont supportés pour les semis de points")
 
