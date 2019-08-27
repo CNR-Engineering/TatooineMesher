@@ -73,7 +73,7 @@ def mesh_crue10_run(args):
         else:
             ignore = False
 
-        if branche.type != 20:
+        if branche.type != 20 or not branche.is_active:
             ignore = True
 
         if not ignore:
