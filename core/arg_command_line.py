@@ -31,10 +31,3 @@ class MyArgParse(argparse.ArgumentParser):
                                                          "pour les limites de lits (en m)", default=0.01)
         self.add_argument("--project_straight_line", action='store_true',
                           help="modifie les profils avec une projection plane sur la ligne berge-à-berge")
-
-    def parse_args(self, *args, **kwargs):
-        """Check argument compatibility before execution"""
-        args = super(MyArgParse, self).parse_args(*args, **kwargs)
-        if args.nb_pts_trans is not None and args.infile_lignes_contraintes is not None:
-            raise TatooineException("Arguments `--nb_pts_trans` and `--infile_lignes_contraintes` are not compatible!")
-        return args

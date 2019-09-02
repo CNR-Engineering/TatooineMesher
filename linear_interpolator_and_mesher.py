@@ -37,6 +37,8 @@ def linear_interpolator_and_mesher(args):
     else:
         lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes,
                                                                  args.interp_lignes_contraintes)
+        if args.nb_pts_trans is not None and len(lignes_contraintes) != 2:
+            raise TatooineException("Argument `--nb_pts_trans` is only compatible with 2 constraint lines!")
         profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
     mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.nb_pts_trans, args.interp_trans_values)

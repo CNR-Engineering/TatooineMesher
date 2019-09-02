@@ -27,6 +27,8 @@ def densify_profiles(args):
         lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers)
     else:
         lignes_contraintes = LigneContrainte.get_lines_from_file(args.infile_lignes_contraintes)
+        if args.nb_pts_trans is not None and len(lignes_contraintes) != 2:
+            raise TatooineException("Argument `--nb_pts_trans` is only compatible with 2 constraint lines!")
     profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
     #profils_travers.export_profil_shp('profils_travers_export_profil.shp')
 
