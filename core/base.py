@@ -597,7 +597,7 @@ class LigneContrainte:
     ### Méthodes
     - coord_sampling_along_line
     """
-    def __init__(self, id, coord, interp_coord=None):
+    def __init__(self, id, coord, interp_coord='LINEAR'):
         """
         Création d'un objet LigneContrainte à partir des coordoonées de la ligne
         coord: liste de tuples (de taille 2)
@@ -626,7 +626,7 @@ class LigneContrainte:
         return "Ligne de contrainte n°{} ({} points)".format(self.id, self.nb_points)
 
     @staticmethod
-    def get_lines_from_file(filename, interp_coord=None):
+    def get_lines_from_file(filename, interp_coord='LINEAR'):
         """
         Extraction d'objects LineString à partir d'un fichier i2s
         Info: value is ignored
@@ -1119,7 +1119,7 @@ class MeshConstructor:
 
         lines = []
         for dist in np.unique(self.points['Xl']):
-            pos = self.points['profil'] == dist
+            pos = self.points['Xl'] == dist
             line = geometry.Polyline([(x, y, z) for (x, y), z in zip(self.points[pos][['X', 'Y']], values[0, :])])
             line.add_attribute(dist)
             lines.append(line)
