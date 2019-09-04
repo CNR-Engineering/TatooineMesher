@@ -192,7 +192,7 @@ class ProfilTravers:
         """
         self.id = id
         self.label = label
-        self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y'])), ['Xt'])
+        self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y'])), ['Xt', 'xt'])
         self.nb_points = len(self.coord.array)
         self.geom = LineString(coord)  # FIXME: contient toujours les points doublons
 
@@ -212,6 +212,9 @@ class ProfilTravers:
 
     def get_limit_by_id(self, id_ligne):
         return self.limites[id_ligne]
+
+    def get_limit_by_idx(self, idx):
+        return self.limites[list(self.limites.keys())[idx]]
 
     def get_Xt_lignes(self, id1, id2):
         return self.get_limit_by_id(id1)['Xt_ligne'], self.get_limit_by_id(id2)['Xt_ligne']
@@ -289,14 +292,16 @@ class ProfilTravers:
 
         # Ajoute le premier point si nécessaire
         if Xt1 not in Xt_profil:
-            row = np.array([tuple(limit1[var] if var != 'Xt' else Xt1 for var in sub_coord.dtype.names)],
+            row = np.array([tuple(limit1[var] if var not in ('Xt', 'xt') else Xt1 for var in sub_coord.dtype.names)],
                            dtype=sub_coord.dtype)
+            row['xt'] = 0.0
             sub_coord = np.insert(sub_coord, 0, row)
 
         # Ajoute le dernier point si nécessaire
         if Xt2 not in Xt_profil:
-            row = np.array([tuple(limit2[var] if var != 'Xt' else Xt2 for var in sub_coord.dtype.names)],
+            row = np.array([tuple(limit2[var] if var not in ('Xt', 'xt') else Xt2 for var in sub_coord.dtype.names)],
                            dtype=sub_coord.dtype)
+            row['xt'] = 1.0
             sub_coord = np.append(sub_coord, row)
 
         # Vérification de l'ordre des points
@@ -789,11 +794,11 @@ class MeshConstructor:
     POINTS_DTYPE = float_vars(['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + \
                               [(var, np.int) for var in ('zone', 'lit')]
 
-    def __init__(self, profils_travers, pas_trans=None, nb_pts_trans=None, interp_trans_values='LINEAR'):
+    def __init__(self, profils_travers, pas_trans=None, nb_pts_trans=None, interp_values='LINEAR'):
         self.profils_travers = profils_travers
         self.pas_trans = pas_trans
         self.nb_pts_trans = nb_pts_trans
-        self.interp_trans_values = interp_trans_values
+        self.interp_values = interp_values
 
         self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE)
         self.nodes_values = np.empty([0, 0, 0], dtype=np.float)
@@ -969,7 +974,6 @@ class MeshConstructor:
                     ### BOUCLE SUR LES LIGNES
                     for k in range(nb_pts_inter):
                         Xp = Xp_adm_list[k]
-                        dist_proj_axe = prev_profil.dist_proj_axe*Xp + next_profil.dist_proj_axe*(1 - Xp)
                         P1 = Point(tuple(L1_coord_int[k]))
                         P2 = Point(tuple(L2_coord_int[k]))
 
@@ -1199,44 +1203,91 @@ class MeshConstructor:
         else:
             raise NotImplementedError("Seuls les formats t3d, xml et slf sont supportés pour les maillages")
 
-    def interp_values_from_profiles(self):
-        """Interpolate values from profiles"""
-        values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))  # y
+    def interp_1d_values_from_profiles(self):
+        """Interpolate values in 1D (lateral + longitudinal) from profiles"""
+        new_values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))
         for i_zone in np.unique(self.points['zone']):
             filter_points = self.points['zone'] == i_zone
-            profile_prev = self.profils_travers[i_zone]
-            profile_next = self.profils_travers[i_zone + 1]
+            section_us = self.profils_travers[i_zone]
+            section_ds = self.profils_travers[i_zone + 1]
+            xt_us = section_us.coord.array['Xt']
+            xt_ds = section_ds.coord.array['Xt']
+            xt_us_target = self.points['Xt_amont'][filter_points]
+            xt_ds_target = self.points['Xt_aval'][filter_points]
+
             for i, var in enumerate(self.var_names()):
-                if self.interp_trans_values == 'LINEAR':
-                    values_prev = np.interp(self.points['Xt_amont'][filter_points],
-                                            profile_prev.coord.array['Xt'], profile_prev.coord.values[var])
-                    values_next = np.interp(self.points['Xt_aval'][filter_points],
-                                            profile_next.coord.array['Xt'], profile_next.coord.values[var])
+                values_us = section_us.coord.values[var]
+                values_ds = section_ds.coord.values[var]
 
-                elif self.interp_trans_values == 'B-SPLINE':
-                    splrep_prev = interpolate.splrep(profile_prev.coord.array['Xt'],  profile_prev.coord.values[var])
-                    splrep_next = interpolate.splrep(profile_next.coord.array['Xt'], profile_next.coord.values[var])
-                    values_prev = interpolate.splev(self.points['Xt_amont'][filter_points], splrep_prev)
-                    values_next = interpolate.splev(self.points['Xt_aval'][filter_points], splrep_next)
+                if self.interp_values == 'LINEAR':
+                    new_values_us = np.interp(xt_us_target, xt_us, values_us)
+                    new_values_ds = np.interp(xt_ds_target, xt_ds, values_ds)
 
-                elif self.interp_trans_values == 'AKIMA':
-                    values_prev = interpolate.Akima1DInterpolator(profile_prev.coord.array['Xt'], profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
-                    values_next = interpolate.Akima1DInterpolator(profile_next.coord.array['Xt'], profile_next.coord.values[var])(self.points['Xt_aval'][filter_points])
+                elif self.interp_values == 'B-SPLINE':
+                    splrep_us = interpolate.splrep(xt_us, values_us)
+                    splrep_ds = interpolate.splrep(xt_ds, values_ds)
+                    new_values_us = interpolate.splev(xt_us_target, splrep_us)
+                    new_values_ds = interpolate.splev(xt_ds_target, splrep_ds)
 
-                elif self.interp_trans_values == 'PCHIP':
-                    values_prev = interpolate.pchip_interpolate(profile_prev.coord.array['Xt'], profile_prev.coord.values[var], self.points['Xt_amont'][filter_points])
-                    values_next = interpolate.pchip_interpolate(profile_next.coord.array['Xt'], profile_next.coord.values[var], self.points['Xt_aval'][filter_points])
+                elif self.interp_values == 'AKIMA':
+                    new_values_us = interpolate.Akima1DInterpolator(xt_us, values_us)(xt_us_target)
+                    new_values_ds = interpolate.Akima1DInterpolator(xt_ds, values_ds)(xt_ds_target)
 
-                elif self.interp_trans_values == 'CUBIC_SPLINE':
-                    values_prev = interpolate.CubicSpline(profile_prev.coord.array['Xt'], profile_prev.coord.values[var])(self.points['Xt_amont'][filter_points])
-                    values_next = interpolate.CubicSpline(profile_next.coord.array['Xt'], profile_next.coord.values[var])(self.points['Xt_aval'][filter_points])
+                elif self.interp_values == 'PCHIP':
+                    new_values_us = interpolate.pchip_interpolate(xt_us, values_us, xt_us_target)
+                    new_values_ds = interpolate.pchip_interpolate(xt_ds, values_ds, xt_ds_target)
+
+                elif self.interp_values == 'CUBIC_SPLINE':
+                    new_values_us = interpolate.CubicSpline(xt_us, values_us)(xt_us_target)
+                    new_values_ds = interpolate.CubicSpline(xt_ds, values_ds)(xt_ds_target)
 
                 else:
                     raise NotImplementedError
 
-                values[i, filter_points] = values_prev * (1 - self.points['xl'][filter_points]) + \
-                                           values_next * self.points['xl'][filter_points]
-        return values
+                new_values[i, filter_points] = new_values_us * (1 - self.points['xl'][filter_points]) + \
+                                               new_values_ds * self.points['xl'][filter_points]
+        return new_values
+
+    def interp_2d_values_from_profiles(self):
+        """Interpolate values in 2D from profiles"""
+        ux = np.array([], dtype=np.float)
+        vy = np.array([], dtype=np.float)
+        new_xt = self.points['xt']
+        new_xl = self.points['xl'] + self.points['zone']
+        new_values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))
+        for i, profile in enumerate(self.profils_travers):
+            first_xt = profile.get_limit_by_idx(0)['Xt_profil']
+            last_xt = profile.get_limit_by_idx(-1)['Xt_profil']
+            xt = (profile.coord.array['Xt'] - first_xt)/(last_xt - first_xt)
+            ux = np.concatenate((ux, xt))
+            vy = np.concatenate((vy, np.array([i] * profile.nb_points)))
+
+        for j, var in enumerate(self.var_names()):
+            z = np.array([], dtype=np.float)
+            for profile in self.profils_travers:
+                z = np.concatenate((z, profile.coord.values[var]))
+
+            if self.interp_values == 'BIVARIATE_SPLINE':
+                interp_bivariate_spline = interpolate.SmoothBivariateSpline(ux, vy, z, kx=3, ky=3)
+                for k, (u, v) in enumerate(zip(new_xt, new_xl)):
+                    new_values[j, k] = interp_bivariate_spline(u, v)[0][0]
+
+            else:
+                if self.interp_values == 'BILINEAR':
+                    method = 'linear'
+                elif self.interp_values == 'BICUBIC':
+                    method = 'cubic'
+                else:
+                    raise NotImplementedError
+                new_values[j, :] = interpolate.griddata((ux, vy), z, (new_xt, new_xl), method=method)
+
+        return new_values
+
+    def interp_values_from_profiles(self):
+        if self.interp_values in ('BILINEAR', 'BICUBIC', 'BIVARIATE_SPLINE'):
+            return self.interp_2d_values_from_profiles()
+        else:
+            return self.interp_1d_values_from_profiles()
 
     def interp_from_values_at_profiles(self, values_at_profiles):
         """Interpolate values from profiles"""
