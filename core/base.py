@@ -567,17 +567,17 @@ class SuiteProfilsTravers:
 
     def export_profil_shp(self, outfile_profils):
         """
-        Write a shapefile with 3D Points
+        Write a shapefile with 3D LineString
         @param outfile_profils <str>: output file name
         """
-        with shapefile.Writer(outfile_profils, shapeType=shapefile.POINTZ) as w:
+        with shapefile.Writer(outfile_profils, shapeType=shapefile.POLYLINEZ) as w:
             w.field('profil_id', 'C')
-            w.field('Z', 'N', decimal=6)
             for profil in self.suite:
                 array = profil.coord.array
-                for row in array:
-                    w.pointz(row['X'], row['Y'], row['Z'])
-                    w.record(profil_id=str(profil.id), Z=row['Z'])
+                z_array = profil.coord.values['Z']
+                coords = [(row['X'], row['Y'], z) for row, z in zip(array, z_array)]
+                w.linez([coords])
+                w.record(profil_id=str(profil.id))
 
     def add_constant_layer(self, name, thickness):
         for profil in self.suite:

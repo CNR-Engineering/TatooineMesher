@@ -30,6 +30,7 @@ def linear_interpolator_and_mesher(args):
     profils_travers.compute_dist_proj_axe(axe, args.dist_max)
     profils_travers.check_intersections()
     profils_travers.sort_by_dist()
+    # profils_travers.export_profil_shp('profiles_projected.shp')  # DEBUG
 
     if args.infile_lignes_contraintes is None:
         lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers,
