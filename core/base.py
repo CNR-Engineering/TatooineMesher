@@ -767,6 +767,7 @@ class MeshConstructor:
     - pas_trans <float>: pas transversal (m)
     - nb_pts_trans <int>: nombre de noeuds transversalement
     - interp_values <str>: interpolation method
+    - nb_var <int>: number of variables
     - points: structured array with columns ['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl', 'zone', 'lit']
     - i_pt <int>: curseur pour repérer l'avancement
     - segments <2D-array int>: list of nodes numbers (0-indexed) to define constrainted segments
@@ -788,17 +789,22 @@ class MeshConstructor:
     - export_segments
     - export_profiles
     - export_mesh
-    - interp_values_from_profiles
+    - interp_values_from_geom
     - get_merge_triangulation
     """
     POINTS_DTYPE = float_vars(['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + \
                               [(var, np.int) for var in ('zone', 'lit')]
+    POINTS_FP_DTYPE = float_vars(['X', 'Y', 'Z'])
 
     def __init__(self, profils_travers=[], pas_trans=None, nb_pts_trans=None, interp_values='LINEAR'):
         self.profils_travers = profils_travers
         self.pas_trans = pas_trans
         self.nb_pts_trans = nb_pts_trans
         self.interp_values = interp_values
+        if self.profils_travers:
+            self.nb_var = self.profils_travers[0].coord.nb_var()
+        else:
+            self.nb_var = 0
 
         self.points = np.empty(0, dtype=MeshConstructor.POINTS_DTYPE)
         self.nodes_values = np.empty([0, 0, 0], dtype=np.float)
@@ -806,14 +812,32 @@ class MeshConstructor:
         self.segments = np.empty([0, 2], dtype=np.int)
         self.triangle = {}  # filled by `build_mesh`
 
+        self.casiers_nodes_idx = []
+        self.nodes_fp = np.empty(0, dtype=MeshConstructor.POINTS_FP_DTYPE)
+
+    @property
+    def nb_nodes_in_riverbed(self):
+        return len(self.points)
+
+    @property
+    def nb_nodes(self):
+        return self.nb_nodes_in_riverbed + len(self.nodes_fp)
+
+    @property
+    def has_floodplain(self):
+        return len(self.casiers_nodes_idx) != 0
+
     def var_names(self):
         return list(self.profils_travers[0].coord.values.dtype.names)
 
-    def add_points(self, coord, xl, index_zone, index_lit):
+    def add_points(self, coord, index_zone, xl, index_lit):
         """!
         @brief: Ajouter des sommets/noeuds
         @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', 'Xt_amont', 'Xt_aval']
         """
+        if self.casiers_nodes_idx:
+            raise TatooineException("Impossible to add points in river bed after having considered the floodplain")
+
         new_coord = np.empty(len(coord), dtype=self.points.dtype)
         # FIXME: avoid copying in using np.lib.recfunctions.append_fields?
         for var in ['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']:  # copy existing columns
@@ -826,12 +850,19 @@ class MeshConstructor:
         self.i_pt += len(new_coord)
         self.points = np.hstack((self.points, new_coord))
 
+    def add_floodplain_mesh(self, triangulation, points):
+        pos_start = self.nb_nodes
+        pos_end = pos_start + len(points)
+        self.nodes_fp = np.hstack((self.nodes_fp, points))
+        self.casiers_nodes_idx.append((pos_start, pos_end))
+        self.append_triangulation(triangulation)
+
     def add_segments(self, seg):
         """!
         @brief: Ajouter des segments à contraintre
         @param seg <2D-array int>: série de couples de sommets
         """
-        self.segments = np.hstack((self.segments, seg))
+        self.segments = np.vstack((self.segments, seg))
 
     def add_segments_from_node_list(self, node_list):
         """
@@ -839,13 +870,28 @@ class MeshConstructor:
         @param node_list <1D-array int>: série de noeuds
         """
         new_segments = np.column_stack((node_list[:-1], node_list[1:]))
-        self.segments = np.vstack((self.segments, new_segments))
+        self.add_segments(new_segments)
+
+    def append_triangulation(self, triangulation):
+        if not self.triangle:
+            self.triangle['triangles'] = triangulation['triangles']
+            self.triangle['vertices'] = triangulation['vertices']
+        else:
+            nb_elem = self.triangle['vertices'].shape[0]
+            self.triangle['triangles'] = np.vstack((self.triangle['triangles'], nb_elem + triangulation['triangles']))
+            self.triangle['vertices'] = np.vstack((self.triangle['vertices'], triangulation['vertices']))
 
     def append_mesh_constr(self, mesh_constr):
         """
         @brief: Append a local mesh to the current instance (adjacent or superimposed meshes are not merged)
         @param mesh_constr <MeshConstructor>: MeshConstructor to combine with current instance
         """
+        if self.nb_nodes == 0:
+            self.nb_var = mesh_constr.nb_var
+        else:
+            if self.nb_var != mesh_constr.nb_var:
+                raise RuntimeError
+
         self.profils_travers += mesh_constr.profils_travers
 
         points = mesh_constr.points
@@ -854,18 +900,11 @@ class MeshConstructor:
             points['zone'] += last_zone + 2
         self.points = np.hstack((self.points, points))
 
-        triangles = mesh_constr.triangles
-        if not self.triangle:
-            self.triangle['triangles'] = triangles['triangles']
-            self.triangle['vertices'] = triangles['vertices']
-        else:
-            nb_elem_before = self.triangle['vertices'].shape[0]
-            self.triangle['triangles'] = np.vstack((self.triangle['triangles'], nb_elem_before + triangles['triangles']))
-            self.triangle['vertices'] = np.vstack((self.triangle['vertices'], triangles['vertices']))
+        self.append_triangulation(mesh_constr.triangle)
 
     def export_triangulation_dict(self):
         """
-        @brief: Export triangulation with vertices in cartesian coordinates
+        @brief: Export triangulation with vertices in geometric coordinates
         """
         return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
                 'segments': self.segments}
@@ -914,11 +953,11 @@ class MeshConstructor:
                 if i == 0:
                     coord_int = rename_fields(coord_int, {'Xt': 'Xt_amont'})
                     coord_int = append_fields(coord_int, 'Xt_aval', np.zeros(len(coord_int)), usemask=False)
-                    self.add_points(coord_int, 0.0, i, j)
+                    self.add_points(coord_int, i, 0.0, j)
                 else:
                     coord_int = rename_fields(coord_int, {'Xt': 'Xt_aval'})
                     coord_int = append_fields(coord_int, 'Xt_amont', np.zeros(len(coord_int)), usemask=False)
-                    self.add_points(coord_int, 1.0, i - 1, j)
+                    self.add_points(coord_int, i - 1, 1.0, j)
 
                 cur_profil.get_limit_by_id(id2)['id_pt'] = self.i_pt
 
@@ -1013,7 +1052,7 @@ class MeshConstructor:
                             # ignore le 1er point car la ligne de contrainte a déjà été traitée
                             coord_int = coord_int[1:]
 
-                        self.add_points(coord_int, Xp, i, j)
+                        self.add_points(coord_int, i, Xp, j)
 
                         pt_list_L2.append(self.i_pt)
 
@@ -1041,26 +1080,39 @@ class MeshConstructor:
                     pt_proj = epi_geom.interpolate(Xt_proj)
                     epi.coord.values['Z'][i] = pt_proj.z
 
-    def build_mesh(self, in_floworiented_crs=False):
-        logger.info("~> Calcul du maillage")
+    def build_mesh(self, in_floworiented_crs=False, opts='p'):
+        """
+        Build mesh under constraints
+        :param in_floworiented_crs: boolean to which coordinate system is usec
+        :param opts: options for the triangulation.
+            `p` - Triangulates a Planar Straight Line Graph.
+            `q` - Quality mesh generation with no angles smaller than 20 degrees.
+                  An alternate minimum angle may be specified after the `q`.
+            `a` - Imposes a maximum triangle area constraint. A fixed area constraint (that applies to every triangle)
+                  may be specified after the `a`, or varying areas may be read from the input dictionary.
+        """
+        logger.info("~> Building mesh")
         if in_floworiented_crs:
             tri = self.export_floworiented_triangulation_dict()
-            self.triangle = triangle.triangulate(tri, opts='p')
+            self.triangle = triangle.triangulate(tri, opts=opts)
             self.triangle['vertices'] = self.export_triangulation_dict()['vertices']  # overwrite by cartesian coordinates
         else:
             tri = self.export_triangulation_dict()
-            self.triangle = triangle.triangulate(tri, opts='p')
-        if len(self.points) != len(self.triangle['vertices']):
-            if len(self.points) < len(self.triangle['vertices']):
-                logger.error("New nodes are:")
-                ori_points = np.column_stack((self.points['X'], self.points['Y']))
-                ori_combined = ori_points[:, 0] * ori_points[:, 1] / (ori_points[:, 0] + ori_points[:, 1])
-                new_points = self.triangle['vertices']
-                new_combined = new_points[:, 0] * new_points[:, 1] / (new_points[:, 0] + new_points[:, 1])
-                diff = np.setxor1d(ori_combined, new_combined)
-                logger.error(new_points[np.isin(new_combined, diff)])
-            raise TatooineException("Mesh is corrupted... %i vs %i nodes." % (
-                len(self.points), len(self.triangle['vertices'])))
+            self.triangle = triangle.triangulate(tri, opts=opts)
+
+        if opts == 'p':  # Check that vertices correspond to points
+            if len(self.points) != len(self.triangle['vertices']):
+                if len(self.points) < len(self.triangle['vertices']):
+                    logger.error("New nodes are:")
+                    ori_points = np.column_stack((self.points['X'], self.points['Y']))
+                    ori_combined = ori_points[:, 0] * ori_points[:, 1] / (ori_points[:, 0] + ori_points[:, 1])
+                    new_points = self.triangle['vertices']
+                    new_combined = new_points[:, 0] * new_points[:, 1] / (new_points[:, 0] + new_points[:, 1])
+                    diff = np.setxor1d(ori_combined, new_combined)
+                    logger.error(new_points[np.isin(new_combined, diff)])
+                raise TatooineException("Mesh is corrupted... %i vs %i nodes." % (
+                    len(self.points), len(self.triangle['vertices'])))
+
         if 'triangles' not in self.triangle:
             raise TatooineException("Mesh was not generated, no triangle found!")
         logger.info(self.summary())
@@ -1070,18 +1122,18 @@ class MeshConstructor:
             nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
         except KeyError:
             raise TatooineException("La génération du maillage a échouée!")
-        return "Génération d'un maillage avec {} noeuds et {} éléments".format(nnode, nelem)
+        return "Maillage avec {} noeuds et {} éléments".format(nnode, nelem)
 
     def export_points(self, path):
         if path.endswith('.xyz'):
             logger.info("~> Exports en xyz des points")
             with open(path, 'wb') as fileout:
-                z_array = self.interp_values_from_profiles()[0, :]
+                z_array = self.interp_values_from_geom()[0, :]
                 np.savetxt(fileout, np.vstack((self.points['X'], self.points['Y'], z_array)).T,
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
         elif path.endswith('.shp'):
             logger.info("~> Exports en shp des points")
-            z_array = self.interp_values_from_profiles()[0, :]
+            z_array = self.interp_values_from_geom()[0, :]
             with shapefile.Writer(path, shapeType=shapefile.POINT) as w:
                 w.field('zone', 'N', decimal=6)
                 w.field('lit', 'N', decimal=6)
@@ -1115,7 +1167,7 @@ class MeshConstructor:
         """
         /!\ Pas cohérent si constant_ech_long est différent de True
         """
-        values = self.interp_values_from_profiles()
+        values = self.interp_values_from_geom()
         if path.endswith('.georefC'):
             with open(path, 'w') as out_geo:
                 for dist in np.unique(self.points['Xl']):
@@ -1186,7 +1238,7 @@ class MeshConstructor:
 
             with open(path, mode='ab') as fileout:
                 # Tableau des coordonnées (x, y, z)
-                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.interp_values_from_profiles()[0, :])),
+                np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.interp_values_from_geom()[0, :])),
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
 
                 # Tableau des éléments (connectivité)
@@ -1197,7 +1249,7 @@ class MeshConstructor:
                 loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'data')))
             template = env.get_template("LandXML_template.xml")
             template_render = template.render(
-                nodes=np.round(np.column_stack((self.triangle['vertices'], self.interp_values_from_profiles()[0, :])),
+                nodes=np.round(np.column_stack((self.triangle['vertices'], self.interp_values_from_geom()[0, :])),
                                DIGITS),
                 ikle=self.triangle['triangles'] + 1
             )
@@ -1220,14 +1272,21 @@ class MeshConstructor:
                         output_header.add_variable_str(var, var, '')
                 resout.write_header(output_header)
 
-                resout.write_entire_frame(output_header, 0.0, self.interp_values_from_profiles())
+                resout.write_entire_frame(output_header, 0.0, self.interp_values_from_geom())
 
         else:
             raise NotImplementedError("Seuls les formats t3d, xml et slf sont supportés pour les maillages")
 
+    def compute_values_in_floodplain(self):
+        """Fill Zf and set nan for other variables"""
+        values = np.empty((self.nb_var, len(self.nodes_fp)))
+        values.fill(np.nan)
+        values[0, :] = self.nodes_fp['Z']
+        return values
+
     def interp_1d_values_from_profiles(self):
         """Interpolate values in 1D (lateral + longitudinal) from profiles"""
-        new_values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))
+        new_values = np.zeros((self.nb_var, self.nb_nodes_in_riverbed))
         for i_zone in np.unique(self.points['zone']):
             filter_points = self.points['zone'] == i_zone
             section_us = self.profils_travers[i_zone]
@@ -1276,7 +1335,7 @@ class MeshConstructor:
         vy = np.array([], dtype=np.float)
         new_xt = self.points['xt']
         new_xl = self.points['xl'] + self.points['zone']
-        new_values = np.zeros((self.profils_travers[0].coord.nb_var(), len(self.points)))
+        new_values = np.zeros((self.nb_var, len(self.points)))
         for i, profile in enumerate(self.profils_travers):
             first_xt = profile.get_limit_by_idx(0)['Xt_profil']
             last_xt = profile.get_limit_by_idx(-1)['Xt_profil']
@@ -1305,20 +1364,28 @@ class MeshConstructor:
 
         return new_values
 
-    def interp_values_from_profiles(self):
+    def interp_values_from_geom(self):
+        values = np.empty((self.nb_var, self.nb_nodes))
+        values.fill(np.nan)
         if self.interp_values in ('BILINEAR', 'BICUBIC', 'BIVARIATE_SPLINE'):
-            return self.interp_2d_values_from_profiles()
+            values[:, :self.nb_nodes_in_riverbed] = self.interp_2d_values_from_profiles()
         else:
-            return self.interp_1d_values_from_profiles()
+            values[:, :self.nb_nodes_in_riverbed] = self.interp_1d_values_from_profiles()
+        values[:, self.nb_nodes_in_riverbed:self.nb_nodes] = self.compute_values_in_floodplain()
+        return values
 
-    def interp_from_values_at_profiles(self, values_at_profiles):
-        """Interpolate values from profiles"""
+    def interp_values_from_res(self, values_at_profiles, z_at_casiers, pos_z):
+        """Interpolate values from results at profiles and casiers"""
         nb_var = values_at_profiles.shape[1]
-        values = np.zeros((nb_var, len(self.points)))
+        values = np.empty((nb_var, self.nb_nodes))
+        values.fill(np.nan)
         xl_all = self.points['zone'] + self.points['xl']
         for i_var in range(nb_var):
-            values[i_var, :] = np.interp(xl_all, np.arange(len(self.profils_travers), dtype=np.float),
-                                         values_at_profiles[:, i_var])
+            values[i_var, :self.nb_nodes_in_riverbed] = np.interp(xl_all, np.arange(len(self.profils_travers),
+                                                                                    dtype=np.float),
+                                                                  values_at_profiles[:, i_var])
+        for (pos_start, pos_end), z in zip(self.casiers_nodes_idx, z_at_casiers):
+            values[pos_z, pos_start:pos_end] = z
         return values
 
     @staticmethod

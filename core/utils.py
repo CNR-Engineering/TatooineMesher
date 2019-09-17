@@ -1,4 +1,5 @@
 import logging
+from math import ceil, sqrt
 import numpy as np
 import shapefile
 
@@ -59,6 +60,37 @@ def get_axe_hydraulique(infile_axe):
         raise TatooineException("Le fichier '{}' contient {} polylignes au lieu d'une seule pour définir "
                                 "l'axe hydraulique".format(infile_axe, nb_lines))
     return lines[0].polyline()
+
+
+def resample_2d_line(coord, dist_max):
+    """
+    @brief: resamples a 2D polyline by preserving its initial points
+    coord <[tuple]>: vertices coordinates as list of tuples [(x1, y1), (x2, y2), ...]
+    dist_max <float>: maximal distance to refine segments
+    """
+    new_coord = [coord[0]]  # add first point
+
+    for coord_line in zip(coord, coord[1:]):
+        # Iterate over each segment
+        [(x1, y1), (x2, y2)] = coord_line
+        length = sqrt((x1 - x2)**2 + (y1 - y2)**2)
+
+        if length > dist_max:
+            # Nombre de points pour la nouvelle ligne (en incluant les 2 points d'origine)
+            nb_pts = ceil(length/dist_max) + 1
+            # Sampling with prescribe number of points
+            #   (and ignore first point which was in the previous
+            xnew = np.linspace(x1, x2, num=nb_pts)[1:]
+            ynew = np.linspace(y1, y2, num=nb_pts)[1:]
+
+            for x, y in zip(xnew, ynew):
+                new_coord.append((x, y))
+
+        else:
+            # Add ending point
+            new_coord.append((x2, y2))
+
+    return new_coord
 
 
 def set_logger_level(set_to_debug):

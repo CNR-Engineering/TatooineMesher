@@ -18,11 +18,14 @@ Les variables écrites dans le fichier de sortie sont :
 TODO:
 * Tenir compte des lignes de contrainte (lit numérotés)
 """
+from gdal import Open
 import numpy as np
+from numpy.lib.recfunctions import unstructured_to_structured
 import os.path
 from pyteltools.slf import Serafin
 import sys
 from time import perf_counter
+import triangle
 
 from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
@@ -32,7 +35,8 @@ from crue10.utils import CrueError
 
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, ProfilTravers, SuiteProfilsTravers
-from core.utils import logger, set_logger_level, TatooineException
+from core.raster import interp_raster
+from core.utils import float_vars, logger, resample_2d_line, set_logger_level, TatooineException
 
 
 LANG = 'fr'  # for variable names
@@ -57,6 +61,7 @@ def mesh_crue10_run(args):
 
     global_mesh_constr = MeshConstructor()
 
+    # Handle branches in minor bed
     id_profile = 0
     for i, branche in enumerate(model.get_branche_list()):
         # Ignore branch if branch_patterns is set and do not match with current branch name
@@ -72,7 +77,6 @@ def mesh_crue10_run(args):
         if branche.type not in args.branch_types_filter or not branche.is_active:
             ignore = True
 
-        # Add branches
         if not ignore:
             logger.info("===== TRAITEMENT DE LA BRANCHE %s =====" % branche.id)
             axe = branche.geom
@@ -114,6 +118,43 @@ def mesh_crue10_run(args):
                 logger.error(e.message)
             logger.info("\n")
 
+    # Handle casiers in floodplain
+    nb_casiers = len(model.get_casier_list())
+    if args.infile_dem and nb_casiers > 0:
+        logger.info("===== TRAITEMENT DES CASIERS =====")
+
+        if not os.path.exists(args.infile_dem):
+            raise TatooineException("File not found: %s" % args.infile_dem)
+        raster = Open(args.infile_dem)
+        dem_interp = interp_raster(raster)
+
+        max_elem_area = args.pas_majeur * args.pas_majeur / 2.0
+        simplify_dist = args.pas_majeur / 2.0
+
+        for i, casier in enumerate(model.get_casier_list()):
+            if casier.geom is None:
+                raise TatooineException("Geometry of %s could not be found" % casier)
+            line = casier.geom.simplify(simplify_dist)
+            if not line.is_closed:
+                raise RuntimeError
+            coords = resample_2d_line(line.coords, args.pas_majeur)[1:]  # Ignore last duplicated node
+
+            hard_nodes_xy = np.array(coords, dtype=np.float)
+            hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=np.int)
+            hard_segments = np.column_stack((hard_nodes_idx, np.roll(hard_nodes_idx, 1)))
+
+            tri = {
+                'vertices': np.array(np.column_stack((hard_nodes_xy[:, 0], hard_nodes_xy[:, 1]))),
+                'segments': hard_segments,
+            }
+            triangulation = triangle.triangulate(tri, opts='qpa%f' % max_elem_area)
+
+            nodes_xy = np.array(triangulation['vertices'], dtype=np.float)
+            bottom = dem_interp(nodes_xy)
+            points = unstructured_to_structured(np.column_stack((nodes_xy, bottom)), names=['X', 'Y', 'Z'])
+
+            global_mesh_constr.add_floodplain_mesh(triangulation, points)
+
     if len(global_mesh_constr.points) == 0:
         raise CrueError("Aucun point à traiter, adaptez l'option `--branch_patterns` et/ou `--branch_types_filter`")
 
@@ -133,14 +174,16 @@ def mesh_crue10_run(args):
         varnames_1d = run.variables['Section']
         logger.info("Variables 1D disponibles aux sections: %s" % varnames_1d)
         pos_z = varnames_1d.index('Z')
+        pos_z_fp = run.variables['Casier'].index('Z')
         pos_variables = [run.variables['Section'].index(var) for var in varnames_1d]
         pos_sections_list = [run.emh['Section'].index(profil.id) for profil in global_mesh_constr.profils_travers]
+        pos_casiers_list = [run.emh['Casier'].index(casier.id) for casier in model.get_casier_list()]
 
         additional_variables_id = ['H']
         if 'Vact' in varnames_1d:
             additional_variables_id.append('M')
 
-        values_geom = global_mesh_constr.interp_values_from_profiles()
+        values_geom = global_mesh_constr.interp_values_from_geom()
         z_bottom = values_geom[0, :]
         with Serafin.Write(args.outfile_mesh, LANG, overwrite=True) as resout:
             title = '%s (written by tatooinemesher)' % os.path.basename(args.outfile_mesh)
@@ -160,47 +203,57 @@ def mesh_crue10_run(args):
                     logger.info("~> Calcul permanent %s" % calc_name)
                     # Read a single *steady* calculation
                     res_perm = run.get_res_perm(calc_name)
-                    res = res_perm['Section']
-                    variables_at_profiles = res[pos_sections_list, :][:, pos_variables]
+                    variables_at_profiles = res_perm['Section'][pos_sections_list, :][:, pos_variables]
+                    if global_mesh_constr.has_floodplain:
+                        z_at_casiers = res_perm['Casier'][pos_casiers_list, pos_z_fp]
+                    else:
+                        z_at_casiers = None
 
-                    # Interpolate between sections
-                    values_1d = global_mesh_constr.interp_from_values_at_profiles(variables_at_profiles)
+                    # Interpolate between sections and set in casiers
+                    values_res = global_mesh_constr.interp_values_from_res(variables_at_profiles, z_at_casiers, pos_z)
 
                     # Compute water depth: H = Z - Zf and clip below 0m (avoid negative values)
-                    depth = np.clip(values_1d[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
+                    depth = np.clip(values_res[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
 
                     # Merge and write values
                     if 'Vact' in varnames_1d:
                         # Compute velocity magnitude from Vact and apply mask "is active bed"
-                        velocity = values_1d[varnames_1d.index('Vact'), :] * values_geom[1, :]
-                        values = np.vstack((values_geom, depth, velocity, values_1d))
+                        velocity = values_res[varnames_1d.index('Vact'), :] * values_geom[1, :]
+                        values = np.vstack((values_geom, depth, velocity, values_res))
                     else:
-                        values = np.vstack((values_geom, depth, values_1d))
+                        values = np.vstack((values_geom, depth, values_res))
+
                     resout.write_entire_frame(output_header, 3600.0 * i, values)
 
             else:
                 res_trans = run.get_calc_trans(args.calc_trans)
                 logger.info("Calcul transitoire %s" % args.calc_trans)
-                res_all = run.get_res_trans(args.calc_trans)['Section']
+                res = run.get_res_trans(args.calc_trans)
+                res_at_sections = res['Section']
 
                 for i, (time, _) in enumerate(res_trans.frame_list):
                     logger.info("~> %fs" % time)
-                    res = res_all[i, :, :]
+                    res = res_at_sections[i, :, :]
                     variables_at_profiles = res[pos_sections_list, :][:, pos_variables]
+                    if global_mesh_constr.has_floodplain:
+                        z_at_casiers = res['Casier'][pos_casiers_list, pos_z_fp]
+                    else:
+                        z_at_casiers = None
 
                     # Interpolate between sections
-                    values_1d = global_mesh_constr.interp_from_values_at_profiles(variables_at_profiles)
+                    values_res = global_mesh_constr.interp_values_from_res(variables_at_profiles, z_at_casiers)
 
                     # Compute water depth: H = Z - Zf and clip below 0m (avoid negative values)
-                    depth = np.clip(values_1d[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
+                    depth = np.clip(values_res[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
 
                     # Merge and write values
                     if 'Vact' in varnames_1d:
                         # Compute velocity magnitude from Vact and apply mask "is active bed"
-                        velocity = values_1d[varnames_1d.index('Vact'), :] * values_geom[1, :]
-                        values = np.vstack((values_geom, depth, velocity, values_1d))
+                        velocity = values_res[varnames_1d.index('Vact'), :] * values_geom[1, :]
+                        values = np.vstack((values_geom, depth, velocity, values_res))
                     else:
-                        values = np.vstack((values_geom, depth, values_1d))
+                        values = np.vstack((values_geom, depth, values_res))
+
                     resout.write_entire_frame(output_header, time, values)
 
     else:
@@ -219,14 +272,16 @@ parser_infiles.add_argument("model_name", help="nom du modèle")
 parser_infiles.add_argument("--infile_rcal", help="fichier de résultat (rcal.xml)")
 parser_infiles.add_argument("--calc_trans", help="nom du calcul transitoire à traiter "
                                                  "(sinon considère tous les calculs permanents)")
+parser_infiles.add_argument("--infile_dem", help="fichier GeoTIFF avec la bathymétrie du champ majeur"
+                                                 " pour traiter les casiers")
+
 # Parameters to select EMHs
-parser_emhs = parser.add_argument_group("Paramètres pour choisir les EMHs à traiter")
-parser_emhs.add_argument("--branch_types_filter", nargs='+', default=Branche.TYPES_IN_MINOR_BED,
-                         help="types des branches à traiter")
-parser_emhs.add_argument("--branch_patterns", nargs='+', default=None,
-                         help="chaîne(s) de caractères pour ne conserver que les branches dont le nom contient"
+parser_branches = parser.add_argument_group("Paramètres pour choisir les EMHs à traiter")
+parser_branches.add_argument("--branch_types_filter", nargs='+', default=Branche.TYPES_IN_MINOR_BED,
+                             help="types des branches à traiter")
+parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
+                             help="chaîne(s) de caractères pour ne conserver que les branches dont le nom contient"
                                  " une de ces expressions")
-parser_emhs.add_argument("--ignore_casiers", help="ignorer les casiers", action="store_true")
 
 # Mesh parameters
 parser_mesh = parser.add_argument_group("Paramètres pour la génération du maillage 2D")

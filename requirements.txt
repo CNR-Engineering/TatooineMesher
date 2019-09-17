@@ -1,3 +1,5 @@
+gdal
+scipy
 jinja2
 matplotlib
 numpy
