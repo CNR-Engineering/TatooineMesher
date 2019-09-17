@@ -44,7 +44,8 @@ def linear_interpolator_and_mesher(args):
             raise TatooineException("A 2D interpolation is only compatible with 2 constraint lines!")
         profils_travers.find_and_add_limits(lignes_contraintes, args.dist_max)
 
-    mesh_constr = MeshConstructor(profils_travers, args.pas_trans, args.nb_pts_trans, args.interp_values)
+    mesh_constr = MeshConstructor(profils_travers=profils_travers, pas_trans=args.pas_trans,
+                                  nb_pts_trans=args.nb_pts_trans, interp_values=args.interp_values)
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
     # mesh_constr.export_segments('check_segments.shp')  # DEBUG
 

@@ -766,7 +766,7 @@ class MeshConstructor:
     - profils_travers <SuiteProfilsTravers>
     - pas_trans <float>: pas transversal (m)
     - nb_pts_trans <int>: nombre de noeuds transversalement
-    #TODO
+    - interp_values <str>: interpolation method
     - points: structured array with columns ['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl', 'zone', 'lit']
     - i_pt <int>: curseur pour repérer l'avancement
     - segments <2D-array int>: list of nodes numbers (0-indexed) to define constrainted segments
@@ -794,7 +794,7 @@ class MeshConstructor:
     POINTS_DTYPE = float_vars(['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + \
                               [(var, np.int) for var in ('zone', 'lit')]
 
-    def __init__(self, profils_travers, pas_trans=None, nb_pts_trans=None, interp_values='LINEAR'):
+    def __init__(self, profils_travers=[], pas_trans=None, nb_pts_trans=None, interp_values='LINEAR'):
         self.profils_travers = profils_travers
         self.pas_trans = pas_trans
         self.nb_pts_trans = nb_pts_trans
@@ -804,7 +804,7 @@ class MeshConstructor:
         self.nodes_values = np.empty([0, 0, 0], dtype=np.float)
         self.i_pt = int(-1)
         self.segments = np.empty([0, 2], dtype=np.int)
-        self.triangle = None  # set by `build_mesh`
+        self.triangle = {}  # filled by `build_mesh`
 
     def var_names(self):
         return list(self.profils_travers[0].coord.values.dtype.names)
@@ -840,6 +840,28 @@ class MeshConstructor:
         """
         new_segments = np.column_stack((node_list[:-1], node_list[1:]))
         self.segments = np.vstack((self.segments, new_segments))
+
+    def append_mesh_constr(self, mesh_constr):
+        """
+        @brief: Append a local mesh to the current instance (adjacent or superimposed meshes are not merged)
+        @param mesh_constr <MeshConstructor>: MeshConstructor to combine with current instance
+        """
+        self.profils_travers += mesh_constr.profils_travers
+
+        points = mesh_constr.points
+        if len(self.points) != 0:
+            last_zone = self.points['zone'].max()
+            points['zone'] += last_zone + 2
+        self.points = np.hstack((self.points, points))
+
+        triangles = mesh_constr.triangles
+        if not self.triangle:
+            self.triangle['triangles'] = triangles['triangles']
+            self.triangle['vertices'] = triangles['vertices']
+        else:
+            nb_elem_before = self.triangle['vertices'].shape[0]
+            self.triangle['triangles'] = np.vstack((self.triangle['triangles'], nb_elem_before + triangles['triangles']))
+            self.triangle['vertices'] = np.vstack((self.triangle['vertices'], triangles['vertices']))
 
     def export_triangulation_dict(self):
         """
