@@ -36,7 +36,7 @@ from crue10.utils import CrueError
 from core.arg_command_line import MyArgParse
 from core.base import LigneContrainte, MeshConstructor, ProfilTravers, SuiteProfilsTravers
 from core.raster import interp_raster
-from core.utils import float_vars, logger, resample_2d_line, set_logger_level, TatooineException
+from core.utils import logger, resample_2d_line, set_logger_level, TatooineException
 
 
 LANG = 'fr'  # for variable names
@@ -128,8 +128,9 @@ def mesh_crue10_run(args):
         raster = Open(args.infile_dem)
         dem_interp = interp_raster(raster)
 
-        max_elem_area = args.pas_majeur * args.pas_majeur / 2.0
-        simplify_dist = args.pas_majeur / 2.0
+        pas_majeur = args.pas_majeur if not None else args.pas_long
+        max_elem_area = pas_majeur * pas_majeur / 2.0
+        simplify_dist = pas_majeur / 2.0
 
         for i, casier in enumerate(model.get_casier_list()):
             if casier.geom is None:
@@ -137,7 +138,7 @@ def mesh_crue10_run(args):
             line = casier.geom.simplify(simplify_dist)
             if not line.is_closed:
                 raise RuntimeError
-            coords = resample_2d_line(line.coords, args.pas_majeur)[1:]  # Ignore last duplicated node
+            coords = resample_2d_line(line.coords, pas_majeur)[1:]  # Ignore last duplicated node
 
             hard_nodes_xy = np.array(coords, dtype=np.float)
             hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=np.int)
@@ -229,19 +230,18 @@ def mesh_crue10_run(args):
                 res_trans = run.get_calc_trans(args.calc_trans)
                 logger.info("Calcul transitoire %s" % args.calc_trans)
                 res = run.get_res_trans(args.calc_trans)
-                res_at_sections = res['Section']
 
                 for i, (time, _) in enumerate(res_trans.frame_list):
                     logger.info("~> %fs" % time)
-                    res = res_at_sections[i, :, :]
-                    variables_at_profiles = res[pos_sections_list, :][:, pos_variables]
+                    res_at_sections = res['Section'][i, :, :]
+                    variables_at_profiles = res_at_sections[pos_sections_list, :][:, pos_variables]
                     if global_mesh_constr.has_floodplain:
-                        z_at_casiers = res['Casier'][pos_casiers_list, pos_z_fp]
+                        z_at_casiers = res['Casier'][i, pos_casiers_list, pos_z_fp]
                     else:
                         z_at_casiers = None
 
                     # Interpolate between sections
-                    values_res = global_mesh_constr.interp_values_from_res(variables_at_profiles, z_at_casiers)
+                    values_res = global_mesh_constr.interp_values_from_res(variables_at_profiles, z_at_casiers, pos_z)
 
                     # Compute water depth: H = Z - Zf and clip below 0m (avoid negative values)
                     depth = np.clip(values_res[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
@@ -272,30 +272,31 @@ parser_infiles.add_argument("model_name", help="nom du modèle")
 parser_infiles.add_argument("--infile_rcal", help="fichier de résultat (rcal.xml)")
 parser_infiles.add_argument("--calc_trans", help="nom du calcul transitoire à traiter "
                                                  "(sinon considère tous les calculs permanents)")
-parser_infiles.add_argument("--infile_dem", help="fichier GeoTIFF avec la bathymétrie du champ majeur"
-                                                 " pour traiter les casiers")
+parser_infiles.add_argument("--infile_dem", help="fichier raster contenant la bathymétrie du champ majeur pour"
+                                                 " traiter les casiers (format GeoTIFF, extension .tif)")
 
-# Parameters to select EMHs
-parser_branches = parser.add_argument_group("Paramètres pour choisir les EMHs à traiter")
+# Parameters to select branches
+parser_branches = parser.add_argument_group("Paramètres pour choisir les branches à traiter")
 parser_branches.add_argument("--branch_types_filter", nargs='+', default=Branche.TYPES_IN_MINOR_BED,
                              help="types des branches à traiter")
 parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
                              help="chaîne(s) de caractères pour ne conserver que les branches dont le nom contient"
-                                 " une de ces expressions")
+                                  " une de ces expressions")
 
 # Mesh parameters
 parser_mesh = parser.add_argument_group("Paramètres pour la génération du maillage 2D")
 parser_mesh.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                         "pour les limites de lits (en m)", default=0.01)
 parser.add_argument("--pas_long", type=float, help="pas d'espace longitudinal (en m)")
+parser.add_argument("--pas_majeur", type=float, help="pas d'espace pour le champ majeur (en m)", default=None)
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("--pas_trans", type=float, help="pas d'espace transversal (en m)")
-group.add_argument("--pas_majeur", type=float, help="pas d'espace en champ majeur (en m)")
 group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralement")
 parser_mesh.add_argument("--constant_ech_long",
                          help="méthode de calcul du nombre de profils interpolés entre profils : "
                               "par profil (constant, ie True) ou par lit (variable, ie False)",
                          action='store_true')
+
 # Outputs
 parser_outfiles = parser.add_argument_group('Fichier de sortie')
 parser_outfiles.add_argument("outfile_mesh", help="Résultat 2D au format slf (Telemac)")
