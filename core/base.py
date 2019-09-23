@@ -1384,8 +1384,9 @@ class MeshConstructor:
             values[i_var, :self.nb_nodes_in_riverbed] = np.interp(xl_all, np.arange(len(self.profils_travers),
                                                                                     dtype=np.float),
                                                                   values_at_profiles[:, i_var])
-        for (pos_start, pos_end), z in zip(self.casiers_nodes_idx, z_at_casiers):
-            values[pos_z, pos_start:pos_end] = z
+        if self.has_floodplain:
+            for (pos_start, pos_end), z in zip(self.casiers_nodes_idx, z_at_casiers):
+                values[pos_z, pos_start:pos_end] = z
         return values
 
     @staticmethod
