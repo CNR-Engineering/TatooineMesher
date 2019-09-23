@@ -33,7 +33,6 @@ from .utils import float_vars, get_intersections, logger, strictly_increasing, T
 
 
 DIGITS = 4  # for csv and xml exports
-LANG = 'fr'  # for variable names
 COURLIS_FLOAT_FMT = '%.6f'
 
 
@@ -1208,7 +1207,7 @@ class MeshConstructor:
             raise NotImplementedError("Seuls les formats i3s, georefC et shp (POLYLINEZ) sont supportés pour écrire le "
                                       "fichier de profils en travers")
 
-    def export_mesh(self, path):
+    def export_mesh(self, path, lang='en'):
         """TODO: export multiple variables in t3s and LandXML"""
         logger.info("~> Écriture du maillage")
 
@@ -1260,9 +1259,9 @@ class MeshConstructor:
 
         elif path.endswith('.slf'):
 
-            with Serafin.Write(path, LANG, overwrite=True) as resout:
+            with Serafin.Write(path, lang, overwrite=True) as resout:
                 output_header = Serafin.SerafinHeader(title='%s (written by tatooinemesher)' % os.path.basename(path),
-                                                      lang=LANG)
+                                                      lang=lang)
                 output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
 
                 for var in self.var_names():

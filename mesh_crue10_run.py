@@ -61,7 +61,6 @@ def mesh_crue10_run(args):
     global_mesh_constr = MeshConstructor()
 
     # Handle branches in minor bed
-    id_profile = 0
     for i, branche in enumerate(model.get_branche_list()):
         # Ignore branch if branch_patterns is set and do not match with current branch name
         if args.branch_patterns is not None:
@@ -96,7 +95,6 @@ def mesh_crue10_run(args):
                         )
 
                         profils_travers.add_profile(profile)
-                        id_profile += 1
 
                 profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                 if len(profils_travers) >= 2:
@@ -196,7 +194,7 @@ def mesh_crue10_run(args):
         values_geom = global_mesh_constr.interp_values_from_geom()
         z_bottom = values_geom[0, :]
         with Serafin.Write(args.outfile_mesh, args.lang, overwrite=True) as resout:
-            title = '%s (written by tatooinemesher)' % os.path.basename(args.outfile_mesh)
+            title = '%s (written by TatooineMesher)' % os.path.basename(args.outfile_mesh)
             output_header = Serafin.SerafinHeader(title=title, lang=args.lang)
             output_header.from_triangulation(global_mesh_constr.triangle['vertices'],
                                              global_mesh_constr.triangle['triangles'] + 1)
@@ -270,7 +268,7 @@ def mesh_crue10_run(args):
 
     else:
         # Write a single frame with only variables from geometry
-        global_mesh_constr.export_mesh(args.outfile_mesh)
+        global_mesh_constr.export_mesh(args.outfile_mesh, lang=args.lang)
 
     t2 = perf_counter()
     logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
