@@ -39,8 +39,7 @@ from core.raster import interp_raster
 from core.utils import logger, resample_2d_line, set_logger_level, TatooineException
 
 
-LANG = 'fr'  # for variable names
-VARIABLES_FROM_GEOMETRY = ['FOND', 'IS LIT ACTIVE', 'FROTTEMENT']
+VARIABLES_FROM_GEOMETRY = ['B', 'IS LIT ACTIVE', 'W']
 
 
 def mesh_crue10_run(args):
@@ -174,8 +173,18 @@ def mesh_crue10_run(args):
         # Subset results to get requested variables at active sections
         varnames_1d = run.variables['Section']
         logger.info("Variables 1D disponibles aux sections: %s" % varnames_1d)
-        pos_z = varnames_1d.index('Z')
-        pos_z_fp = run.variables['Casier'].index('Z')
+        try:
+            pos_z = varnames_1d.index('Z')
+        except ValueError:
+            raise TatooineException("La variable Z doit être présente dans les résultats aux sections")
+        if global_mesh_constr.has_floodplain:
+            try:
+                pos_z_fp = run.variables['Casier'].index('Z')
+            except ValueError:
+                raise TatooineException("La variable Z doit être présente dans les résultats aux casiers")
+        else:
+            pos_z_fp = None
+
         pos_variables = [run.variables['Section'].index(var) for var in varnames_1d]
         pos_sections_list = [run.emh['Section'].index(profil.id) for profil in global_mesh_constr.profils_travers]
         pos_casiers_list = [run.emh['Casier'].index(casier.id) for casier in model.get_casier_list()]
@@ -186,13 +195,16 @@ def mesh_crue10_run(args):
 
         values_geom = global_mesh_constr.interp_values_from_geom()
         z_bottom = values_geom[0, :]
-        with Serafin.Write(args.outfile_mesh, LANG, overwrite=True) as resout:
+        with Serafin.Write(args.outfile_mesh, args.lang, overwrite=True) as resout:
             title = '%s (written by tatooinemesher)' % os.path.basename(args.outfile_mesh)
-            output_header = Serafin.SerafinHeader(title=title, lang=LANG)
+            output_header = Serafin.SerafinHeader(title=title, lang=args.lang)
             output_header.from_triangulation(global_mesh_constr.triangle['vertices'],
                                              global_mesh_constr.triangle['triangles'] + 1)
             for var_name in VARIABLES_FROM_GEOMETRY:
-                output_header.add_variable_str(var_name, var_name, '')
+                if var_name in ['B', 'W']:
+                    output_header.add_variable_from_ID(var_name)
+                else:
+                    output_header.add_variable_str(var_name, var_name, '')
             for var_id in additional_variables_id:
                 output_header.add_variable_from_ID(var_id)
             for var_name in varnames_1d:
@@ -300,6 +312,8 @@ parser_mesh.add_argument("--constant_ech_long",
 # Outputs
 parser_outfiles = parser.add_argument_group('Fichier de sortie')
 parser_outfiles.add_argument("outfile_mesh", help="Résultat 2D au format slf (Telemac)")
+parser_outfiles.add_argument("--lang", help="Langue pour nommer les variables du fichier de sortie", default='fr',
+                             choices=['en', 'fr'])
 
 if __name__ == '__main__':
     args = parser.parse_args()
