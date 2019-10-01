@@ -1,5 +1,3 @@
-import math
-import numpy as np
 
 
 class CubicHermiteSpline:
@@ -86,45 +84,3 @@ class CubicHermiteSpline:
             self.KeyPts[-1].M = m * grad(-2, -1)
         else:
             raise NotImplementedError
-
-
-# def get_interp_cubic_hermite_spline(distances, x_array, y_array, distances_new, tan_method, c=None):
-#     spline_x = CubicHermiteSpline()  # x = spline_x(dist)
-#     spline_y = CubicHermiteSpline()  # y = spline_y(dist)
-#
-#     spline_x.Initialize(np.vstack((distances, x_array)).T, tan_method=tan_method, c=c)
-#     spline_y.Initialize(np.vstack((distances, y_array)).T, tan_method=tan_method, c=c)
-#
-#     xx = []
-#     yy = []
-#     for dist in distances_new:
-#         x = spline_x.evaluate(dist)
-#         y = spline_y.evaluate(dist)
-#         xx.append(x)
-#         yy.append(y)
-#     return xx, yy
-#
-#
-# def export_points(i, liste_profiles, type_tang):
-#     x_array = np.zeros(len(liste_profiles))
-#     y_array = np.zeros(len(liste_profiles))
-#     distances = np.zeros(len(liste_profiles))
-#
-#     # Calcul des distances curvilignes
-#     x_old, y_old = None, None
-#     for j, profile in enumerate(liste_profiles):
-#         x = profile.coord.array['X'][i]
-#         y = profile.coord.array['Y'][i]
-#         x_array[j] = x
-#         y_array[j] = y
-#         if j != 0:
-#             distances[j] = distances[j - 1] + math.sqrt((x - x_old) ** 2 + (y - y_old) ** 2)
-#         x_old, y_old = x, y
-#
-#     distances_new = np.arange(distances.min(), distances.max(), 0.1)
-#     distances_new = np.unique(np.concatenate((distances_new, distances)))
-#
-#     X2, Y2 = get_interp_cubic_hermite_spline(distances, x_array, y_array, distances_new, type_tang)
-#     with open('points[%i]_hcs_(%s).i2s' % (i, type_tang), 'w') as fileout:
-#         for valx, valy in zip(X2, Y2):
-#             fileout.write('%f %f \n' % (valx, valy))

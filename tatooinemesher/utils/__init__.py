@@ -93,6 +93,15 @@ def resample_2d_line(coord, dist_max):
     return new_coord
 
 
+def get_field_index(filename, field_id):
+    if field_id is not None:
+        names, _ = shp.get_attribute_names(filename)
+        try:
+            return names.index(field_id)
+        except ValueError:
+            raise TatooineException("Le champ `%s` n'existe pas" % field_id)
+
+
 def set_logger_level(set_to_debug):
     level = logging.DEBUG if set_to_debug else logging.INFO
     logger.setLevel(level)

@@ -1,11 +1,13 @@
 """
+mesh_crue10_run.py
+
 Génération d'un fichier résultat 2D (format Telemac) avec plusieurs variables et éventuellement plusieurs temps.
 La taille des éléments du maillage est controlable.
 Seulement les résultats (ou données) aux sections rattachées à des branches 20 sont considérées. (FIXME)
 
 Si un fichier rcal est spécifié alors on peut traiter :
 - tous les calculs permanents
-- un calcul transitoire en spécifiant son nom dans l'argument `--calc_trans`
+- un calcul transitoire en spécifiant son nom dans l'argument `--calc_unsteady`
 
 Les variables écrites dans le fichier de sortie sont :
 * FOND
@@ -18,7 +20,6 @@ Les variables écrites dans le fichier de sortie sont :
 TODO:
 * Tenir compte des lignes de contrainte (lit numérotés)
 """
-from gdal import Open
 import numpy as np
 from numpy.lib.recfunctions import unstructured_to_structured
 import os.path
@@ -29,14 +30,16 @@ import triangle
 
 from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
-from crue10.run import RunResults
+from crue10.results import RunResults
 from crue10.study import Study
 from crue10.utils import CrueError
 
-from core.arg_command_line import MyArgParse
-from core.base import LigneContrainte, MeshConstructor, ProfilTravers, SuiteProfilsTravers
-from core.raster import interp_raster
-from core.utils import logger, resample_2d_line, set_logger_level, TatooineException
+from tatooinemesher.constraint_lines import LigneContrainte
+from tatooinemesher.mesh_constructor import MeshConstructor
+from tatooinemesher.sections import ProfilTravers, SuiteProfilsTravers
+from tatooinemesher.interp.raster import interp_raster
+from tatooinemesher.utils.arg_command_line import MyArgParse
+from tatooinemesher.utils import logger, resample_2d_line, set_logger_level, TatooineException
 
 
 VARIABLES_FROM_GEOMETRY = ['B', 'IS LIT ACTIVE', 'W']
@@ -122,6 +125,7 @@ def mesh_crue10_run(args):
 
         if not os.path.exists(args.infile_dem):
             raise TatooineException("File not found: %s" % args.infile_dem)
+        from gdal import Open
         raster = Open(args.infile_dem)
         dem_interp = interp_raster(raster)
 
@@ -160,16 +164,16 @@ def mesh_crue10_run(args):
 
     if args.infile_rcal:
         # Read rcal result file
-        run = RunResults(args.infile_rcal)
-        logger.info(run.summary())
+        results = RunResults(args.infile_rcal)
+        logger.info(results.summary())
 
         # Check result consistency
-        missing_sections = model.get_missing_active_sections(run.emh['Section'])
+        missing_sections = model.get_missing_active_sections(results.emh['Section'])
         if missing_sections:
             raise CrueError("Sections manquantes :\n%s" % missing_sections)
 
         # Subset results to get requested variables at active sections
-        varnames_1d = run.variables['Section']
+        varnames_1d = results.variables['Section']
         logger.info("Variables 1D disponibles aux sections: %s" % varnames_1d)
         try:
             pos_z = varnames_1d.index('Z')
@@ -177,15 +181,15 @@ def mesh_crue10_run(args):
             raise TatooineException("La variable Z doit être présente dans les résultats aux sections")
         if global_mesh_constr.has_floodplain:
             try:
-                pos_z_fp = run.variables['Casier'].index('Z')
+                pos_z_fp = results.variables['Casier'].index('Z')
             except ValueError:
                 raise TatooineException("La variable Z doit être présente dans les résultats aux casiers")
         else:
             pos_z_fp = None
 
-        pos_variables = [run.variables['Section'].index(var) for var in varnames_1d]
-        pos_sections_list = [run.emh['Section'].index(profil.id) for profil in global_mesh_constr.profils_travers]
-        pos_casiers_list = [run.emh['Casier'].index(casier.id) for casier in model.get_casier_list()]
+        pos_variables = [results.variables['Section'].index(var) for var in varnames_1d]
+        pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.profils_travers]
+        pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in model.get_casier_list()]
 
         additional_variables_id = ['H']
         if 'Vact' in varnames_1d:
@@ -209,14 +213,14 @@ def mesh_crue10_run(args):
                 output_header.add_variable_str(var_name, var_name, '')
             resout.write_header(output_header)
 
-            if args.calc_trans is None:
-                for i, calc_name in enumerate(run.calc_perms.keys()):
+            if args.calc_unsteady is None:
+                for i, calc_name in enumerate(results.calc_steady_dict.keys()):
                     logger.info("~> Calcul permanent %s" % calc_name)
                     # Read a single *steady* calculation
-                    res_perm = run.get_res_perm(calc_name)
-                    variables_at_profiles = res_perm['Section'][pos_sections_list, :][:, pos_variables]
+                    res_steady = results.get_res_steady(calc_name)
+                    variables_at_profiles = res_steady['Section'][pos_sections_list, :][:, pos_variables]
                     if global_mesh_constr.has_floodplain:
-                        z_at_casiers = res_perm['Casier'][pos_casiers_list, pos_z_fp]
+                        z_at_casiers = res_steady['Casier'][pos_casiers_list, pos_z_fp]
                     else:
                         z_at_casiers = None
 
@@ -237,16 +241,16 @@ def mesh_crue10_run(args):
                     resout.write_entire_frame(output_header, 3600.0 * i, values)
 
             else:
-                res_trans = run.get_calc_trans(args.calc_trans)
-                logger.info("Calcul transitoire %s" % args.calc_trans)
-                res = run.get_res_trans(args.calc_trans)
+                calc_unsteady = results.get_calc_unsteady(args.calc_unsteady)
+                logger.info("Calcul transitoire %s" % args.calc_unsteady)
+                res_unsteady = results.get_res_unsteady(args.calc_unsteady)
 
-                for i, (time, _) in enumerate(res_trans.frame_list):
+                for i, (time, _) in enumerate(calc_unsteady.frame_list):
                     logger.info("~> %fs" % time)
-                    res_at_sections = res['Section'][i, :, :]
+                    res_at_sections = res_unsteady['Section'][i, :, :]
                     variables_at_profiles = res_at_sections[pos_sections_list, :][:, pos_variables]
                     if global_mesh_constr.has_floodplain:
-                        z_at_casiers = res['Casier'][i, pos_casiers_list, pos_z_fp]
+                        z_at_casiers = res_unsteady['Casier'][i, pos_casiers_list, pos_z_fp]
                     else:
                         z_at_casiers = None
 
@@ -280,7 +284,7 @@ parser_infiles = parser.add_argument_group("Modèle et run Crue10 à traiter")
 parser_infiles.add_argument("infile_etu", help="fichier d'étude Crue10 (etu.xml)")
 parser_infiles.add_argument("model_name", help="nom du modèle")
 parser_infiles.add_argument("--infile_rcal", help="fichier de résultat (rcal.xml)")
-parser_infiles.add_argument("--calc_trans", help="nom du calcul transitoire à traiter "
+parser_infiles.add_argument("--calc_unsteady", help="nom du calcul transitoire à traiter "
                                                  "(sinon considère tous les calculs permanents)")
 parser_infiles.add_argument("--infile_dem", help="fichier raster contenant la bathymétrie du champ majeur pour"
                                                  " traiter les casiers (format GeoTIFF, extension .tif)")

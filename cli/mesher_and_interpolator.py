@@ -1,31 +1,35 @@
 #!/usr/bin/env python3
 """
-Interpolation linéaire entre profils en travers
-Génération d'un maillage (optionnel)
+mesher_and_interpolator.py
+Channel mesher and interpolator from cross-sections
 
-Remarque :
-* intégration possible de seuils (correction locale de la bathymétrie)
+Remark:
+* integrate "seuils?" (local correction of the bathymetry)
 """
 from time import perf_counter
-from core.arg_command_line import MyArgParse
-from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
-from core.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
+
+from tatooinemesher.constraint_lines import LigneContrainte
+from tatooinemesher.mesh_constructor import MeshConstructor
+from tatooinemesher.sections import ProfilTravers, SuiteProfilsTravers
+from tatooinemesher.utils.arg_command_line import MyArgParse
+from tatooinemesher.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
 
 
-def linear_interpolator_and_mesher(args):
+def mesher_and_interpolator(args):
     set_logger_level(args.verbose)
     t1 = perf_counter()
 
     logger.info("~> Lecture des fichiers d'entrées")
     axe = get_axe_hydraulique(args.infile_axe)
-    profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
+    profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Cross-sections",
                                                     field_id=args.attr_profils_travers,
                                                     project_straight_line=args.project_straight_line)
 
-    has_epi = args.infile_epis is not None and args.dist_corr_epi is not None
-    if has_epi:
-        epis = SuiteProfilsTravers.from_file(args.infile_epis, "Épi", field_id=args.attr_epis,
+    if args.infile_epis is not None and args.dist_corr_epi is not None:
+        epis = SuiteProfilsTravers.from_file(args.infile_epis, "Groynes", field_id=args.attr_epis,
                                              project_straight_line=args.project_straight_line)
+    else:
+        epis = None
 
     profils_travers.compute_dist_proj_axe(axe, args.dist_max)
     profils_travers.check_intersections()
@@ -49,7 +53,7 @@ def linear_interpolator_and_mesher(args):
     mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
     # mesh_constr.export_segments('check_segments.shp')  # DEBUG
 
-    if has_epi:
+    if epis is not None:
         mesh_constr.corr_bathy_on_epis(epis, args.dist_corr_epi)
 
     if args.outfile_semis is not None:
@@ -91,6 +95,6 @@ parser_outfiles.add_argument("--outfile_semis", help="semis de points au format 
 if __name__ == '__main__':
     args = parser.parse_args()
     try:
-        linear_interpolator_and_mesher(args)
+        mesher_and_interpolator(args)
     except TatooineException as e:
         logger.critical(e.message)

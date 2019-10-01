@@ -77,7 +77,7 @@ densify_profiles.py axe.i2s profils.i3s out.shp --pas_long 6 --pas_trans 4
 ### Interpolateur/mailleur 2D
 Exemple d'utilisation basique :
 ```bash
-linear_interpolator_and_mesher.py axe.i2s profils.i3s --pas_long 6 --pas_trans 4 --outfile_semis semis.shp --outfile_mesh maillage.slf
+mesher_and_interpolator.py axe.i2s profils.i3s --pas_long 6 --pas_trans 4 --outfile_semis semis.shp --outfile_mesh maillage.slf
 ```
 
 Sans lignes de contrainte  | Avec lignes de contrainte
@@ -102,7 +102,7 @@ Dans le cas d'un fichier shp, l'attribut doit exister dans le fichier et pour un
 pour lire la valeura affectée à chaque objet.
 Si ces arguments ne sont pas renseignés, les objets sont simplement numéros à partir de 0.
 
-L'outil `linear_interpolator_and_mesher.py` dispose de l'argument `--constant_ech_long` pour spécifier comment les
+L'outil `mesher_and_interpolator.py` dispose de l'argument `--constant_ech_long` pour spécifier comment les
 points intermédiaires (entre 2 profils) sont ajoutés.
 Si cet argument est renseigné, l'outil ajoutera un nombre de points constant longitudinalement.
 Ainsi les points en sortie correspondront aux profils que le densificateur de profils aurait calculés.

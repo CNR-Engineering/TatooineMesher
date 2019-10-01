@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
 densify_profiles.py
+
 Interpolate intermediate cross-sections
 """
 from time import perf_counter
 
-from core.arg_command_line import MyArgParse
-from core.base import LigneContrainte, MeshConstructor, SuiteProfilsTravers
-from core.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
+from tatooinemesher.constraint_lines import LigneContrainte
+from tatooinemesher.mesh_constructor import MeshConstructor
+from tatooinemesher.sections import SuiteProfilsTravers
+from tatooinemesher.utils.arg_command_line import MyArgParse
+from tatooinemesher.utils import get_axe_hydraulique, logger, set_logger_level, TatooineException
 
 
 def densify_profiles(args):

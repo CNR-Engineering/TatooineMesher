@@ -1,7 +1,5 @@
 import argparse
 
-from core.utils import TatooineException
-
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
     pass

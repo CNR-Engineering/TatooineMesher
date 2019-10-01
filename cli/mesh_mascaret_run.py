@@ -1,4 +1,6 @@
 """
+mesh_mascaret_run.py
+
 Mesh Mascaret geometry and results if specified
 """
 from math import sqrt
@@ -12,9 +14,11 @@ from crue10.utils import CrueError
 from mascaret.mascaret_file import MascaretFile
 from mascaret.mascaretgeo_file import MascaretGeoFile
 
-from core.arg_command_line import MyArgParse
-from core.base import LigneContrainte, MeshConstructor, ProfilTravers, SuiteProfilsTravers
-from core.utils import logger, set_logger_level, TatooineException
+from tatooinemesher.constraint_lines import LigneContrainte
+from tatooinemesher.mesh_constructor import MeshConstructor
+from tatooinemesher.sections import ProfilTravers, SuiteProfilsTravers
+from tatooinemesher.utils.arg_command_line import MyArgParse
+from tatooinemesher.utils import logger, set_logger_level, TatooineException
 
 
 VARIABLES_FROM_GEOMETRY = ['B']

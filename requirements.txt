@@ -1,9 +1,9 @@
-gdal
-scipy
+gdal  # only for mesh_crue10_run.py with casiers
 jinja2
 matplotlib
 numpy
 pyshp>=2.0
+scipy
 shapely
 triangle
 -e git://github.com/CNR-Engineering/Crue10_tools.git#egg=Crue10_tools
