@@ -114,7 +114,7 @@ def mesh_crue10_run(args):
                 else:
                     logger.warning("Branche ignorée par manque de sections")
             except TatooineException as e:
-                logger.error("/!\ Branche ignorée à cause d'une erreur bloquante :")
+                logger.error("/!\\ Branche ignorée à cause d'une erreur bloquante :")
                 logger.error(e.message)
             logger.info("\n")
 

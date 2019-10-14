@@ -7,9 +7,9 @@ import os.path
 import sys
 
 
-FOLDER_DOC = os.path.join('..', '..', 'TatooineMesher.wiki')
+FOLDER_DOC = os.path.join('..', '..', '..', 'TatooineMesher.wiki')
 
-FOLDER_SCRIPTS = os.path.join('..')
+FOLDER_SCRIPTS = os.path.join('..', 'cli')
 
 URL_WIKI = 'https://github.com/CNR-Engineering/TatooineMesher/wiki'
 

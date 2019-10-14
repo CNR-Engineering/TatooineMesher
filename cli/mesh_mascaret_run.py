@@ -30,7 +30,7 @@ def mesh_mascaret_run(args):
 
     masc_geo = MascaretGeoFile(args.infile_geo)
     logger.info("Read %s " % masc_geo)
-    masc_geo.export_shp_lines(args.infile_geo.replace('.georef', '.shp'))
+    # masc_geo.export_shp_lines(args.infile_geo.replace('.georef', '.shp'))
     if not masc_geo.has_ref:
         raise TatooineException("The file `%s` does not contain any georeferenced data" % masc_geo.file_name)
 
@@ -70,7 +70,7 @@ def mesh_mascaret_run(args):
 
             global_mesh_constr.append_mesh_constr(mesh_constr)
         else:
-            logger.error("/!\ Reach %s ignored because it does not contain at least 2 sections" % reach_id)
+            logger.error("/!\\ Reach %s ignored because it does not contain at least 2 sections" % reach_id)
 
     if len(global_mesh_constr.points) == 0:
         raise CrueError("No node in the generated mesh!")
@@ -140,8 +140,8 @@ parser_infiles.add_argument("--infile_res", help="Mascaret results file (*.opt, 
 
 # Mesh parameters
 parser_mesh = parser.add_argument_group("Parameters to generate the 2D mesh")
-parser_mesh.add_argument("--dist_max", type=float, help="maximum search distance for intersections fictifs' "
-                                                        "pour les limites de lits (en m)", default=0.01)
+parser_mesh.add_argument("--dist_max", type=float, help="maximum search distance to rescue intersections "
+                                                        "for limits (in m)", default=0.01)
 parser.add_argument("--pas_long", type=float, help="longitudinal space step (in m)")
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("--pas_trans", type=float, help="lateral space step (in m)")
@@ -154,7 +154,7 @@ parser_mesh.add_argument("--constant_ech_long",
 # Outputs
 parser_outfiles = parser.add_argument_group('Output file')
 parser_outfiles.add_argument("outfile_mesh", help="Telemac results file")
-parser_outfiles.add_argument("--lang", help="Language for common variables in output file", default='fr',
+parser_outfiles.add_argument("--lang", help="Language for standard variables in output file", default='fr',
                              choices=['en', 'fr'])
 
 if __name__ == '__main__':

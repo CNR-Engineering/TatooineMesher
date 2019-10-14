@@ -17,9 +17,9 @@ def densify_profiles(args):
     set_logger_level(args.verbose)
     t1 = perf_counter()
 
-    logger.info("~> Lecture des fichiers d'entrées")
+    logger.info("~> Reading input files")
     axe = get_axe_hydraulique(args.infile_axe)
-    profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Profils en travers",
+    profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Section",
                                                     field_id=args.attr_profils_travers,
                                                     project_straight_line=args.project_straight_line)
 

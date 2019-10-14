@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 mesher_and_interpolator.py
-Channel mesher and interpolator from cross-sections
 
-Remark:
-* integrate "seuils?" (local correction of the bathymetry)
+Channel mesher and/or interpolator from cross-sections
 """
+#TODO: integrate "seuils?" (local correction of the bathymetry)
 from time import perf_counter
 
 from tatooinemesher.constraint_lines import LigneContrainte
@@ -19,7 +18,7 @@ def mesher_and_interpolator(args):
     set_logger_level(args.verbose)
     t1 = perf_counter()
 
-    logger.info("~> Lecture des fichiers d'entrées")
+    logger.info("~> Reading input files")
     axe = get_axe_hydraulique(args.infile_axe)
     profils_travers = SuiteProfilsTravers.from_file(args.infile_profils_travers, "Cross-sections",
                                                     field_id=args.attr_profils_travers,
@@ -64,17 +63,18 @@ def mesher_and_interpolator(args):
         mesh_constr.export_mesh(args.outfile_mesh)
 
     t2 = perf_counter()
-    logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
+    logger.info("=> Execution time: {}s".format(t2-t1))
 
 
 parser = MyArgParse(description=__doc__)
 parser.add_common_args()
 # Inputs
-parser_epis = parser.add_argument_group('Paramètres pour la définition des épis (optionnels)')
-parser_epis.add_argument("--infile_epis", help="fichier d'entrée i3s/shp avec les épis")
-parser_epis.add_argument("--attr_epis", help="attribut pour identifier les épis")
+parser_epis = parser.add_argument_group('Parameters to define lateral groynes (optional)')
+parser_epis.add_argument("--infile_epis", help="input file for groynes i3s/shp")
+parser_epis.add_argument("--attr_epis", help="attribute to identify groynes")
 parser_epis.add_argument("--dist_corr_epi", type=float,
-                         help="distance autour des épis (en général inférieur aux pas trans. et long.)")
+                         help="distance around groynes to modify nodes close to them "
+                              "(should be less than lateral and longitudinal space step)")
 parser.add_argument("--constant_ech_long", help="méthode de calcul du nombre de profils interpolés entre profils : "
                     "par profil (constant, ie True) ou par lit (variable, ie False)", action='store_true')
 parser.add_argument("--interp_lignes_contraintes",
@@ -85,11 +85,11 @@ parser.add_argument("--interp_values",
                     default='LINEAR', choices=('LINEAR', 'B-SPLINE', 'AKIMA', 'PCHIP', 'CUBIC_SPLINE',
                                                'BILINEAR', 'BICUBIC', 'BIVARIATE_SPLINE'))
 # Outputs
-parser_outfiles = parser.add_argument_group('Fichiers de sortie')
-parser_outfiles.add_argument("--outfile_mesh", help="maillage au format : slf (Telemac), t3s (BlueKenue),"
-                                                    " ou xml (LandXML pour ArcGIS)")
+parser_outfiles = parser.add_argument_group('Output files')
+parser_outfiles.add_argument("--outfile_mesh", help="mesh file. Supported formats: slf (Telemac), t3s (BlueKenue),"
+                                                    " and xml (LandXML for GIS)")
 parser_outfiles.add_argument("--outfile_semis", help="semis de points au format xyz"
-                                                     " (correspond aux noeuds du maillage")
+                                                     " (correspond to mesh nodes)")
 
 
 if __name__ == '__main__':
