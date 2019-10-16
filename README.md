@@ -1,7 +1,7 @@
 TatooineMesher
 ==============
 
-<img style="float: right" src="https://github.com/CNR-Engineering/PyTelTools_media/raw/master/media/logo_tatooinemesher_256px.png" width="168px" />
+<img style="float: right" src="https://github.com/CNR-Engineering/TatooineMesher/raw/master/media/logo_tatooinemesher_256px.png" width="168px" />
 
 > Channel mesher and interpolator from 1D cross-sections and constraint lines
 
