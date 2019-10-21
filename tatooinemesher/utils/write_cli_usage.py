@@ -9,7 +9,7 @@ import sys
 
 FOLDER_DOC = os.path.join('..', '..', '..', 'TatooineMesher.wiki')
 
-FOLDER_SCRIPTS = os.path.join('..', 'cli')
+FOLDER_SCRIPTS = os.path.join('..', '..', 'cli')
 
 URL_WIKI = 'https://github.com/CNR-Engineering/TatooineMesher/wiki'
 
@@ -40,7 +40,7 @@ with open(os.path.join(FOLDER_DOC, '_Sidebar.md'), 'w') as out_sidebar:
             script = CommandLineScript(file_path)
 
             # Write a markdown file (to be integrated within github wiki)
-            with open(os.path.join(FOLDER_DOC, script_name + '.md'), 'w') as fileout:
+            with open(os.path.join(FOLDER_DOC, script_name + '.py.md'), 'w') as fileout:
                 fileout.write('```\n')
                 fileout.write(script.help_msg())
                 fileout.write('```\n')
