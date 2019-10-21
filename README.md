@@ -8,12 +8,12 @@ TatooineMesher
 ## Description
 
 Set of 4 command line scripts:
-* `densify_profiles.py` : interpolate intermediate cross-sections
+* `densify_cross_sections.py` : interpolate initial and intermediate cross-sections
 * `mesher_and_interpolator.py`: mesh and interpolate from a set of cross-sections
 * `mesh_crue10_run.py` : visualize Crue10 model geometry and results
 * `mesh_mascaret_run.py` : visualize Mascaret model geometry and results
 
-The commande line scripts of TatooineMesher are located in the `cli` folder.
+The command line scripts of TatooineMesher are located in the `cli` folder.
  
 See [wiki pages](https://github.com/CNR-Engineering/TatooineMesher/wiki) to learn how to use them.
 

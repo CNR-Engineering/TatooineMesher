@@ -13,7 +13,7 @@ from shapely.geometry import Point
 import time
 import triangle
 
-from tatooinemesher.sections import Lit
+from tatooinemesher.sections import Bed
 from tatooinemesher.utils import float_vars, logger, TatooineException
 
 
@@ -26,9 +26,9 @@ class MeshConstructor:
     MeshConstructor: construire un maillage et interpoler les valeurs
 
     ### Attributs
-    - profils_travers <SuiteProfilsTravers>
-    - pas_trans <float>: pas transversal (m)
-    - nb_pts_trans <int>: nombre de noeuds transversalement
+    - section_seq <CrossSectionSequence>
+    - lat_step <float>: pas transversal (m)
+    - nb_pts_lat <int>: nombre de noeuds transversalement
     - interp_values <str>: interpolation method
     - nb_var <int>: number of variables
     - points: structured array with columns ['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl', 'zone', 'lit']
@@ -59,13 +59,13 @@ class MeshConstructor:
                               [(var, np.int) for var in ('zone', 'lit')]
     POINTS_FP_DTYPE = float_vars(['X', 'Y', 'Z'])
 
-    def __init__(self, profils_travers=[], pas_trans=None, nb_pts_trans=None, interp_values='LINEAR'):
-        self.profils_travers = profils_travers
-        self.pas_trans = pas_trans
-        self.nb_pts_trans = nb_pts_trans
+    def __init__(self, section_seq=[], lat_step=None, nb_pts_lat=None, interp_values='LINEAR'):
+        self.section_seq = section_seq
+        self.lat_step = lat_step
+        self.nb_pts_lat = nb_pts_lat
         self.interp_values = interp_values
-        if self.profils_travers:
-            self.nb_var = self.profils_travers[0].coord.nb_var()
+        if self.section_seq:
+            self.nb_var = self.section_seq[0].coord.nb_var()
         else:
             self.nb_var = 0
 
@@ -91,12 +91,12 @@ class MeshConstructor:
         return len(self.casiers_nodes_idx) != 0
 
     def var_names(self):
-        return list(self.profils_travers[0].coord.values.dtype.names)
+        return list(self.section_seq[0].coord.values.dtype.names)
 
     def add_points(self, coord, index_zone, xl, index_lit):
         """!
-        @brief: Ajouter des sommets/noeuds
-        @param coord <2D-array float>: tableau des coordonnées avec les colonnes ['X', 'Y', 'Xt_amont', 'Xt_aval']
+        @brief: Add vertices/nodes
+        @param coord <2D-array float>: table with columns 'X', 'Y', 'Xt_amont' and 'Xt_aval'
         """
         if self.casiers_nodes_idx:
             raise TatooineException("Impossible to add points in river bed after having considered the floodplain")
@@ -107,8 +107,8 @@ class MeshConstructor:
             new_coord[var] = coord[var]
         new_coord['zone'] = index_zone
         new_coord['lit'] = index_lit
-        new_coord['Xl'] = self.profils_travers[index_zone].dist_proj_axe * (1 - xl) + \
-                          self.profils_travers[index_zone + 1].dist_proj_axe * xl
+        new_coord['Xl'] = self.section_seq[index_zone].dist_proj_axe * (1 - xl) + \
+                          self.section_seq[index_zone + 1].dist_proj_axe * xl
         new_coord['xl'] = xl
         self.i_pt += len(new_coord)
         self.points = np.hstack((self.points, new_coord))
@@ -155,7 +155,7 @@ class MeshConstructor:
             if self.nb_var != mesh_constr.nb_var:
                 raise RuntimeError
 
-        self.profils_travers += mesh_constr.profils_travers
+        self.section_seq += mesh_constr.section_seq
 
         points = mesh_constr.points
         if len(self.points) != 0:
@@ -183,33 +183,33 @@ class MeshConstructor:
 
     def build_initial_profiles(self):
         logger.info("~> Interpolation sur les profils existants en prenant en compte "
-                    "le passage des lignes de contraintes")
-        for i in range(len(self.profils_travers)):
-            cur_profil = self.profils_travers[i]
-            logger.debug(cur_profil)
+                    "le passage des lignes de contraintes")  #TOTRANSLATE
+        for i in range(len(self.section_seq)):
+            curr_profile = self.section_seq[i]
+            logger.debug(curr_profile)
 
-            # Recherche des limites communes "amont"
+            # Looking for upstream common limits
             if i == 0:
-                common_limites_id_1 = cur_profil.limites.keys()
+                common_limits_id_1 = curr_profile.limits.keys()
             else:
-                common_limites_id_1 = cur_profil.common_limits(self.profils_travers[i - 1].limites.keys())
+                common_limits_id_1 = curr_profile.common_limits(self.section_seq[i - 1].limits.keys())
 
-            # Recherche des limites communes "aval"
-            if i == len(self.profils_travers) - 1:
-                common_limites_id_2 = cur_profil.limites.keys()
+            # Looking for downstream common limits
+            if i == len(self.section_seq) - 1:
+                common_limits_id_2 = curr_profile.limits.keys()
             else:
-                common_limites_id_2 = cur_profil.common_limits(self.profils_travers[i + 1].limites.keys())
+                common_limits_id_2 = curr_profile.common_limits(self.section_seq[i + 1].limits.keys())
 
-            # Union ordonnée des limites amont/aval
-            limites_id = cur_profil.common_limits(list(set(common_limites_id_1).union(common_limites_id_2)))
+            # Ordered union of upstream and downstream limits
+            limits_id = curr_profile.common_limits(list(set(common_limits_id_1).union(common_limits_id_2)))
 
-            first_lit = True
-            for j, (id1, id2) in enumerate(zip(limites_id, limites_id[1:])):
-                lit = cur_profil.extraire_lit(id1, id2)
-                coord_int = lit.interp_coord_along_lit_auto(self.pas_trans, self.nb_pts_trans)
+            first_bed = True
+            for j, (id1, id2) in enumerate(zip(limits_id, limits_id[1:])):
+                lit = curr_profile.extract_bed(id1, id2)
+                coord_int = lit.interp_coord_along_lit_auto(self.lat_step, self.nb_pts_lat)
 
-                if first_lit:
-                    cur_profil.get_limit_by_id(id1)['id_pt'] = self.i_pt + 1
+                if first_bed:
+                    curr_profile.get_limit_by_id(id1)['id_pt'] = self.i_pt + 1
                 else:
                     coord_int = coord_int[1:]
 
@@ -222,60 +222,60 @@ class MeshConstructor:
                     coord_int = append_fields(coord_int, 'Xt_amont', np.zeros(len(coord_int)), usemask=False)
                     self.add_points(coord_int, i - 1, 1.0, j)
 
-                cur_profil.get_limit_by_id(id2)['id_pt'] = self.i_pt
+                curr_profile.get_limit_by_id(id2)['id_pt'] = self.i_pt
 
                 # Ajoute les nouveaux segments
-                new_i_pt = np.arange(cur_profil.get_limit_by_id(id1)['id_pt'],
-                                     cur_profil.get_limit_by_id(id2)['id_pt'] + 1)
+                new_i_pt = np.arange(curr_profile.get_limit_by_id(id1)['id_pt'],
+                                     curr_profile.get_limit_by_id(id2)['id_pt'] + 1)
                 self.add_segments_from_node_list(new_i_pt)
 
-                if first_lit:
-                    first_lit = False
+                if first_bed:
+                    first_bed = False
 
-    def build_interp(self, lignes_contraintes, pas_long, constant_ech_long):
+    def build_interp(self, lignes_contraintes, long_step, constant_long_disc):
         """
         Build interpolation, add points and segments
 
-        @param lignes_contraintes <[LigneContrainte]>: lignes de contrainte
-        @param pas_long <float>
-        @param constant_ech_long <bool>
+        @param lignes_contraintes <[ConstraintLine]>: lignes de contrainte
+        @param long_step <float>
+        @param constant_long_disc <bool>
         """
         self.build_initial_profiles()
 
         ### BOUCLE SUR L'ESPACE INTER-PROFIL
         logger.info("~> Construction du maillage par zone interprofils puis par lit")
 
-        for i, (prev_profil, next_profil) in enumerate(zip(self.profils_travers, self.profils_travers[1:])):
+        for i, (prev_profil, next_profil) in enumerate(zip(self.section_seq, self.section_seq[1:])):
             logger.debug("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
 
-            if constant_ech_long:
-                nb_pts_inter = prev_profil.calcul_nb_pts_inter(next_profil, pas_long)
+            if constant_long_disc:
+                nb_pts_inter = prev_profil.compute_nb_pts_inter(next_profil, long_step)
                 Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
-            # Recherche des limites communes entre les deux profils
-            common_limites_id = prev_profil.common_limits(next_profil.limites.keys())
-            logger.debug("Limites de lits communes : {}".format(list(common_limites_id)))
+            # Looking for common limits between cross-sections
+            common_limits_id = prev_profil.common_limits(next_profil.limits.keys())
+            logger.debug("Common limits: {}".format(list(common_limits_id)))
 
-            if len(common_limites_id) < 2:
-                raise TatooineException("Aucune interpolation pour l'intervalle {}, entre {} et {} ({} limites communes)".format(
-                    i, prev_profil, next_profil, len(common_limites_id)))
+            if len(common_limits_id) < 2:
+                raise TatooineException("No interpolation in the interval %i, between %s and %s (%i common limits)"
+                                        % (i, prev_profil, next_profil, len(common_limits_id)))
 
             else:
                 first_lit = True
-                ### BOUCLE SUR LES LITS (= MORCEAU(X) DE PROFIL)
-                for j, (id1, id2) in enumerate(zip(common_limites_id, common_limites_id[1:])):
+                ### LOOP ON BEDS
+                for j, (id1, id2) in enumerate(zip(common_limits_id, common_limits_id[1:])):
                     pt_list_L1 = []
                     pt_list_L2 = []
 
-                    logger.debug("Lit {}-{}".format(id1, id2))
+                    logger.debug("Bed {}-{}".format(id1, id2))
 
                     # Extraction d'une partie des profils
-                    lit_1 = prev_profil.extraire_lit(id1, id2)
-                    lit_2 = next_profil.extraire_lit(id1, id2)
+                    lit_1 = prev_profil.extract_bed(id1, id2)
+                    lit_2 = next_profil.extract_bed(id1, id2)
 
                     # Abscisses curvilignes le long de la ligne de contrainte
-                    (Xp_profil1_L1, Xp_profil1_L2) = prev_profil.get_Xt_lignes(id1, id2)
-                    (Xp_profil2_L1, Xp_profil2_L2) = next_profil.get_Xt_lignes(id1, id2)
+                    (Xp_profil1_L1, Xp_profil1_L2) = prev_profil.get_Xt_lines(id1, id2)
+                    (Xp_profil2_L1, Xp_profil2_L2) = next_profil.get_Xt_lines(id1, id2)
                     dXp_L1 = Xp_profil2_L1 - Xp_profil1_L1
                     dXp_L2 = Xp_profil2_L2 - Xp_profil1_L2
 
@@ -286,8 +286,8 @@ class MeshConstructor:
                         raise TatooineException("La ligne {} n'est pas orientée dans le même ordre que les profils"
                                                 .format(id2))
 
-                    if not constant_ech_long:
-                        nb_pts_inter = math.ceil(min(dXp_L1, dXp_L2)/pas_long) - 1
+                    if not constant_long_disc:
+                        nb_pts_inter = math.ceil(min(dXp_L1, dXp_L2)/long_step) - 1
                         Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
                     L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1,
@@ -301,12 +301,12 @@ class MeshConstructor:
                         P1 = Point(tuple(L1_coord_int[k]))
                         P2 = Point(tuple(L2_coord_int[k]))
 
-                        if self.nb_pts_trans is None:
-                            nb_pts_trans = math.ceil(P1.distance(P2) / self.pas_trans) + 1
+                        if self.nb_pts_lat is None:
+                            nb_pts_lat = math.ceil(P1.distance(P2) / self.lat_step) + 1
                         else:
-                            nb_pts_trans = self.nb_pts_trans
-                        array = lit_1.interp_coord_linear(lit_2, Xp, nb_pts_trans)
-                        lit_int = Lit(array, ['Xt', 'xt'])
+                            nb_pts_lat = self.nb_pts_lat
+                        array = lit_1.interp_coord_linear(lit_2, Xp, nb_pts_lat)
+                        lit_int = Bed(array, ['Xt', 'xt'])
                         lit_int.move_between_targets(P1, P2)
                         coord_int = lit_int.array[['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt`
                         pt_list_L1.append(self.i_pt + 1)
@@ -330,7 +330,7 @@ class MeshConstructor:
                         first_lit = False
 
     def corr_bathy_on_epis(self, epis, dist_corr_epi):
-        raise NotImplementedError
+        raise NotImplementedError  #TODO
         logger.info("~> Correction de la bathymétrie autour des épis")
         if self.var_names() != ['Z']:
             raise TatooineException("Impossible de corriger les épis sur les couches sédimentaires")
@@ -384,18 +384,19 @@ class MeshConstructor:
         try:
             nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
         except KeyError:
-            raise TatooineException("La génération du maillage a échouée!")
-        return "Maillage avec {} noeuds et {} éléments".format(nnode, nelem)
+            raise TatooineException("The generation of the mesh failed!")
+        return "Mesh with {} nodes and {} elements".format(nnode, nelem)
 
     def export_points(self, path):
         if path.endswith('.xyz'):
-            logger.info("~> Exports en xyz des points")
+            logger.info("~> Exports points in xyz")
             with open(path, 'wb') as fileout:
                 z_array = self.interp_values_from_geom()[0, :]
                 np.savetxt(fileout, np.vstack((self.points['X'], self.points['Y'], z_array)).T,
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
+
         elif path.endswith('.shp'):
-            logger.info("~> Exports en shp des points")
+            logger.info("~> Exports points in shp")
             z_array = self.interp_values_from_geom()[0, :]
             with shapefile.Writer(path, shapeType=shapefile.POINT) as w:
                 w.field('zone', 'N', decimal=6)
@@ -410,12 +411,13 @@ class MeshConstructor:
                     w.record(**{'zone': float(row['zone']), 'lit': float(row['lit']),
                                 'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xt': row['xt'],
                                 'xl': row['xl'], 'Z': z})
+
         else:
-            raise NotImplementedError("Seuls les formats shp et xyz sont supportés pour les semis de points")
+            raise TatooineException("Only shp and xyz are supported for points set")
 
     def export_segments(self, path):
         if path.endswith('.shp'):
-            logger.info("~> Exports en shp des segments")
+            logger.info("~> Export segments in a shp file")
             with shapefile.Writer(path, shapeType=shapefile.POLYLINE) as w:
                 w.field('id_seg', 'N', decimal=6)
                 for i, (node1, node2) in enumerate(self.segments):
@@ -424,11 +426,12 @@ class MeshConstructor:
                     w.line([[[point1['X'], point1['Y']], [point2['X'], point2['Y']]]])
                     w.record(id_seg=i)
         else:
-            raise NotImplementedError("Seul le format shp est supporté pour les segments")
+            raise TatooineException("Only the shp format is supported for segments")
 
     def export_profiles(self, path):
         """
-        /!\ Pas cohérent si constant_ech_long est différent de True
+        Export generated profiles in a shp, i3s or georefC file
+        /!\ Not relevant if constant_long_disc is False
         """
         values = self.interp_values_from_geom()
         if path.endswith('.georefC'):
@@ -465,20 +468,25 @@ class MeshConstructor:
             with bk.Write(path) as out_i3s:
                 out_i3s.write_header()
                 out_i3s.write_lines(lines, [l.attributes()[0] for l in lines])
+
         elif path.endswith('.shp'):
             shp.write_shp_lines(path, shapefile.POLYLINEZ, lines, 'Z')
+
         else:
-            raise NotImplementedError("Seuls les formats i3s, georefC et shp (POLYLINEZ) sont supportés pour écrire le "
-                                      "fichier de profils en travers")
+            raise NotImplementedError("Only the shp (POLYLINEZ), i3s and georefC formats are supported for "
+                                      "the generated cross-sections file")
 
     def export_mesh(self, path, lang='en'):
-        """TODO: export multiple variables in t3s and LandXML"""
-        logger.info("~> Écriture du maillage")
+        """
+        Export generated mesh in slf, t3s or LandXML
+        TODO: export multiple variables in t3s and LandXML
+        """
+        logger.info("~> Write generated mesh")
 
         nnode, nelem = len(self.triangle['vertices']), len(self.triangle['triangles'])
         if path.endswith('.t3s'):
             with open(path, 'w', newline='') as fileout:
-                # Écriture en-tête
+                # Write header
                 date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
                 fileout.write("""#########################################################################
 :FileType t3s  ASCII  EnSim 1.0
@@ -487,7 +495,7 @@ class MeshConstructor:
 #
 :Application              BlueKenue
 :Version                  3.3.4
-:WrittenBy                tatooinemesher
+:WrittenBy                TatooineMesher
 :CreationDate             {}
 #
 #------------------------------------------------------------------------
@@ -500,11 +508,11 @@ class MeshConstructor:
 """.format(date, nnode, nelem))
 
             with open(path, mode='ab') as fileout:
-                # Tableau des coordonnées (x, y, z)
+                # Table with x, y, z coordinates
                 np.savetxt(fileout, np.column_stack((self.triangle['vertices'], self.interp_values_from_geom()[0, :])),
                            delimiter=' ', fmt='%.{}f'.format(DIGITS))
 
-                # Tableau des éléments (connectivité)
+                # Table with elements (connectivity)
                 np.savetxt(fileout, self.triangle['triangles'] + 1, delimiter=' ', fmt='%i')
 
         elif path.endswith('.xml'):
@@ -517,14 +525,14 @@ class MeshConstructor:
                 ikle=self.triangle['triangles'] + 1
             )
 
-            # Écriture du fichier XML
+            # Write XML file
             with open(path, 'w') as fileout:
                 fileout.write(template_render)
 
         elif path.endswith('.slf'):
 
             with Serafin.Write(path, lang, overwrite=True) as resout:
-                output_header = Serafin.SerafinHeader(title='%s (written by tatooinemesher)' % os.path.basename(path),
+                output_header = Serafin.SerafinHeader(title='%s (Written by TatooineMesher)' % os.path.basename(path),
                                                       lang=lang)
                 output_header.from_triangulation(self.triangle['vertices'], self.triangle['triangles'] + 1)
 
@@ -538,7 +546,7 @@ class MeshConstructor:
                 resout.write_entire_frame(output_header, 0.0, self.interp_values_from_geom())
 
         else:
-            raise NotImplementedError("Seuls les formats t3d, xml et slf sont supportés pour les maillages")
+            raise NotImplementedError("Only slf, t3s and xml formats are supported for the output mesh")
 
     def compute_values_in_floodplain(self):
         """Fill Zf and set nan for other variables"""
@@ -552,8 +560,8 @@ class MeshConstructor:
         new_values = np.zeros((self.nb_var, self.nb_nodes_in_riverbed))
         for i_zone in np.unique(self.points['zone']):
             filter_points = self.points['zone'] == i_zone
-            section_us = self.profils_travers[i_zone]
-            section_ds = self.profils_travers[i_zone + 1]
+            section_us = self.section_seq[i_zone]
+            section_ds = self.section_seq[i_zone + 1]
             xt_us = section_us.coord.array['Xt']
             xt_ds = section_ds.coord.array['Xt']
             xt_us_target = self.points['Xt_amont'][filter_points]
@@ -599,7 +607,7 @@ class MeshConstructor:
         new_xt = self.points['xt']
         new_xl = self.points['xl'] + self.points['zone']
         new_values = np.zeros((self.nb_var, len(self.points)))
-        for i, profile in enumerate(self.profils_travers):
+        for i, profile in enumerate(self.section_seq):
             first_xt = profile.get_limit_by_idx(0)['Xt_profil']
             last_xt = profile.get_limit_by_idx(-1)['Xt_profil']
             xt = (profile.coord.array['Xt'] - first_xt)/(last_xt - first_xt)
@@ -608,7 +616,7 @@ class MeshConstructor:
 
         for j, var in enumerate(self.var_names()):
             z = np.array([], dtype=np.float)
-            for profile in self.profils_travers:
+            for profile in self.section_seq:
                 z = np.concatenate((z, profile.coord.values[var]))
 
             if self.interp_values == 'BIVARIATE_SPLINE':
@@ -644,7 +652,7 @@ class MeshConstructor:
         values.fill(np.nan)
         xl_all = self.points['zone'] + self.points['xl']
         for i_var in range(nb_var):
-            values[i_var, :self.nb_nodes_in_riverbed] = np.interp(xl_all, np.arange(len(self.profils_travers),
+            values[i_var, :self.nb_nodes_in_riverbed] = np.interp(xl_all, np.arange(len(self.section_seq),
                                                                                     dtype=np.float),
                                                                   values_at_profiles[:, i_var])
         if self.has_floodplain:

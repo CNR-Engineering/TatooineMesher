@@ -8,14 +8,16 @@ from tatooinemesher.utils import logger, strictly_increasing, TatooineException
 
 class Coord:
     """
-    Coord: ensemble de points 2D/3D consécutifs (ex: polylignes)
+    Coord: consecutive 2D or 3D points (e.g. polylines)
 
-    ### Attributs
-    - array: structured array with coordinates ('X', 'Y'), variables (see z_labels) and eventually distance(s) ('Xt', 'xt')
-    - z_labels: nom des variables d'intérêt
+    ### Attributes
+    - array: structured array with coordinates ('X', 'Y'), variables (see coord_labels)
+        and eventually distance(s) ('Xt', 'xt')
+    - coord_labels: list of variable names (TOCHECK)
     - values: structured array with values (different variables are possible)
 
-    ### Méthodes
+    ### Methods
+    - nb_var
     - compute_Xt
     - compute_xt
     - move_between_targets
@@ -45,10 +47,10 @@ class Coord:
 
         if remove_duplicates:
             if not strictly_increasing(self.array['Xt']):
-                logger.warn("Des points doublons sont éliminés")
+                logger.warn("Duplicated points are removed")
                 # Suppression des doublons (points superposés dans la polyligne)
-                points_a_conserver = np.ediff1d(self.array['Xt'], to_begin=1.) != 0.
-                self.array = self.array[points_a_conserver]
+                points2keep = np.ediff1d(self.array['Xt'], to_begin=1.) != 0.
+                self.array = self.array[points2keep]
 
     def nb_var(self):
         if self.values is None:
@@ -58,7 +60,7 @@ class Coord:
 
     def compute_Xt(self):
         """
-        Calcul de l'abscisse curviligne `Xt` (distance 2D cumulée)
+        Compute cumulated curvilinear distance `Xt`
         """
         Xt = np.sqrt(np.power(np.ediff1d(self.array['X'], to_begin=0.), 2) +
                      np.power(np.ediff1d(self.array['Y'], to_begin=0.), 2))
@@ -72,8 +74,8 @@ class Coord:
 
     def compute_xt(self):
         """
-        Calcul de l'abscisse curviligne adimensionnée `xt` (de 0 à 1)
-        /!\ La colonne `Xt` doit déjà exister
+        Compute dimensionless curvilinear distance `xt` (from 0 to 1)
+        /!\ Column `Xt` has to exist
         """
         if len(self.array) > 1:
             xt = (self.array['Xt'] - self.array['Xt'][0])/(self.array['Xt'][-1] - self.array['Xt'][0])
@@ -89,11 +91,10 @@ class Coord:
 
     def move_between_targets(self, p1, p2):
         """
-        @brief: Déplace la ligne pour la faire correspondre aux limites voulues
-            (par translation pondérée linéairement de p1 à p2)
-        @param p1 <Point>: point d'origine de la ligne
-        @param p2 <Point>: point final de la ligne
-        /!\ L'objet est modifié directement et la méthode ne retourne rien
+        @brief: Shift current instance to fit bounds to p1 and p2
+            (by a linear weighted translation from p1 to p2)
+        @param p1 <Point>: starting point
+        @param p2 <Point>: ending point
         """
         array = deepcopy(self.array)
         xt = array['xt']
@@ -101,7 +102,9 @@ class Coord:
         self.array['Y'] = array['Y'] + (1-xt)*(p1.y-array['Y'][0]) + xt*(p2.y-array['Y'][-1])
 
     def compute_xp(self):
-        """Calcul de la distance projetée adimensionnée sur droite début->fin"""
+        """
+        Compute dimensionless from starting to ending point distance projetée adimensionnée sur droite début->fin
+        """
         trace = LineString([self.array[['X', 'Y']][0], self.array[['X', 'Y']][-1]])
         Xp = np.empty(len(self.array), dtype=np.float)
 

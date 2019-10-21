@@ -16,9 +16,6 @@ Les variables écrites dans le fichier de sortie sont :
 * Les variables supplémentaires si un résultat est lu sont :
     * HAUTEUR D'EAU (la variable 'Z' est nécessaire)
     * VITESSE SCALAIRE (seulement si la variable 'Vact' est présente)
-
-TODO:
-* Tenir compte des lignes de contrainte (lit numérotés)
 """
 import numpy as np
 from numpy.lib.recfunctions import unstructured_to_structured
@@ -34,9 +31,9 @@ from crue10.results import RunResults
 from crue10.study import Study
 from crue10.utils import CrueError
 
-from tatooinemesher.constraint_lines import LigneContrainte
+from tatooinemesher.constraint_lines import ConstraintLine
 from tatooinemesher.mesh_constructor import MeshConstructor
-from tatooinemesher.sections import ProfilTravers, SuiteProfilsTravers
+from tatooinemesher.sections import CrossSection, CrossSectionSequence
 from tatooinemesher.interp.raster import interp_raster
 from tatooinemesher.utils.arg_command_line import MyArgParse
 from tatooinemesher.utils import logger, resample_2d_line, set_logger_level, TatooineException
@@ -82,11 +79,11 @@ def mesh_crue10_run(args):
             logger.info("===== TRAITEMENT DE LA BRANCHE %s =====" % branche.id)
             axe = branche.geom
             try:
-                profils_travers = SuiteProfilsTravers()
+                profils_travers = CrossSectionSequence()
                 for section in branche.sections:
                     if isinstance(section, SectionProfil):
                         coords = list(section.get_coord(add_z=True))
-                        profile = ProfilTravers(section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
+                        profile = CrossSection(section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
 
                         # Determine some variables (constant over the simulation) from the geometry
                         z = np.array([coord[2] for coord in coords])
@@ -97,17 +94,17 @@ def mesh_crue10_run(args):
                             names=VARIABLES_FROM_GEOMETRY
                         )
 
-                        profils_travers.add_profile(profile)
+                        profils_travers.add_section(profile)
 
                 profils_travers.compute_dist_proj_axe(axe, args.dist_max)
                 if len(profils_travers) >= 2:
                     profils_travers.check_intersections()
-                    # profils_travers.sort_by_dist() is useless because profiles are already sorted
-                    lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers)
+                    # section_seq.sort_by_dist() is useless because profiles are already sorted
+                    lignes_contraintes = ConstraintLine.get_lines_and_set_limits_from_sections(profils_travers)
 
-                    mesh_constr = MeshConstructor(profils_travers=profils_travers,
-                                                  pas_trans=args.pas_trans, nb_pts_trans=args.nb_pts_trans)
-                    mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
+                    mesh_constr = MeshConstructor(section_seq=profils_travers,
+                                                  lat_step=args.lat_step, nb_pts_lat=args.nb_pts_lat)
+                    mesh_constr.build_interp(lignes_contraintes, args.long_step, args.constant_long_disc)
                     mesh_constr.build_mesh(True)
 
                     global_mesh_constr.append_mesh_constr(mesh_constr)
@@ -129,9 +126,9 @@ def mesh_crue10_run(args):
         raster = Open(args.infile_dem)
         dem_interp = interp_raster(raster)
 
-        pas_majeur = args.pas_majeur if not None else args.pas_long
-        max_elem_area = pas_majeur * pas_majeur / 2.0
-        simplify_dist = pas_majeur / 2.0
+        floodplain_step = args.floodplain_step if not None else args.long_step
+        max_elem_area = floodplain_step * floodplain_step / 2.0
+        simplify_dist = floodplain_step / 2.0
 
         for i, casier in enumerate(model.get_casier_list()):
             if casier.geom is None:
@@ -139,7 +136,7 @@ def mesh_crue10_run(args):
             line = casier.geom.simplify(simplify_dist)
             if not line.is_closed:
                 raise RuntimeError
-            coords = resample_2d_line(line.coords, pas_majeur)[1:]  # Ignore last duplicated node
+            coords = resample_2d_line(line.coords, floodplain_step)[1:]  # Ignore last duplicated node
 
             hard_nodes_xy = np.array(coords, dtype=np.float)
             hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=np.int)
@@ -188,7 +185,7 @@ def mesh_crue10_run(args):
             pos_z_fp = None
 
         pos_variables = [results.variables['Section'].index(var) for var in varnames_1d]
-        pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.profils_travers]
+        pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
         pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in model.get_casier_list()]
 
         additional_variables_id = ['H']
@@ -301,12 +298,12 @@ parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
 parser_mesh = parser.add_argument_group("Paramètres pour la génération du maillage 2D")
 parser_mesh.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                         "pour les limites de lits (en m)", default=0.01)
-parser.add_argument("--pas_long", type=float, help="pas d'espace longitudinal (en m)")
-parser.add_argument("--pas_majeur", type=float, help="pas d'espace pour le champ majeur (en m)", default=None)
+parser.add_argument("--long_step", type=float, help="pas d'espace longitudinal (en m)")
+parser.add_argument("--floodplain_step", type=float, help="pas d'espace pour le champ majeur (en m)", default=None)
 group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument("--pas_trans", type=float, help="pas d'espace transversal (en m)")
-group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralement")
-parser_mesh.add_argument("--constant_ech_long",
+group.add_argument("--lat_step", type=float, help="pas d'espace transversal (en m)")
+group.add_argument("--nb_pts_lat", type=int, help="nombre de noeuds transveralement")
+parser_mesh.add_argument("--constant_long_disc",
                          help="méthode de calcul du nombre de profils interpolés entre profils : "
                               "par profil (constant, ie True) ou par lit (variable, ie False)",
                          action='store_true')

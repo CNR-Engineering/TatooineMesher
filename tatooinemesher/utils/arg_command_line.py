@@ -16,15 +16,16 @@ class MyArgParse(argparse.ArgumentParser):
         self.add_argument("--verbose", "-v", help="increase output verbosity", action="store_true")
 
     def add_common_args(self):
-        parser_infiles = self.add_argument_group("Fichiers d'entrée obligatoires")
-        parser_infiles.add_argument("infile_axe", help="fichier d'entrée de l'axe hydraulique (i2s ou shp)")
-        parser_infiles.add_argument("infile_profils_travers", help="fichier d'entrée de profils en travers (i3s ou shp)")
-        self.add_argument("--infile_lignes_contraintes", help="fichier d'entrée de lignes de contrainte (i2s ou shp)")
-        self.add_argument("--attr_profils_travers", help="attribut pour identifier les profils en travers")
-        self.add_argument("--pas_long", type=float, help="pas d'interpolation longitudinal (en m)")
+        parser_infiles = self.add_argument_group("Compulsory input files")
+        parser_infiles.add_argument("infile_axis", help="fichier d'entrée de l'axe hydraulique (*.shp, *.i2s)")
+        parser_infiles.add_argument("infile_cross_sections",
+                                    help="fichier d'entrée de profils en travers (*.shp, *.i3s)")
+        self.add_argument("--infile_constraint_lines", help="fichier d'entrée de lignes de contrainte (*.shp, *.i2s)")
+        self.add_argument("--attr_cross_sections", help="attribut pour identifier les profils en travers")
+        self.add_argument("--long_step", type=float, help="longitudinal space step (in m)")
         group = self.add_mutually_exclusive_group(required=True)
-        group.add_argument("--pas_trans", type=float, help="pas d'interpolation transversal (en m)")
-        group.add_argument("--nb_pts_trans", type=int, help="nombre de noeuds transveralemen")
+        group.add_argument("--lat_step", type=float, help="lateral space step (in m)")
+        group.add_argument("--nb_pts_lat", type=int, help="number of nodes crosswise")
         self.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
                                                          "pour les limites de lits (en m)", default=0.01)
         self.add_argument("--project_straight_line", action='store_true',

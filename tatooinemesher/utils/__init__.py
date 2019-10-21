@@ -16,8 +16,8 @@ logger.addHandler(handler)
 
 def get_intersections(linestrings):
     """
-    @brief: Chercher les intersections entre toutes les lignes
-    @param linestrings <[shapely.geometry.LineString]>: lignes à analyser
+    @brief: Find intersections between all lines
+    @param linestrings <[shapely.geometry.LineString]>: list of lines to analyze
     """
     intersections = []
     for i, l1 in enumerate(linestrings):
@@ -39,34 +39,34 @@ def strictly_increasing(array):
     return all(x < y for x, y in zip(array, array[1:]))
 
 
-def get_axe_hydraulique(infile_axe):
+def get_hydraulic_axis(infile_axis):
     """
-    @brief: Extraction de l'unique ligne du fichier i2s d'entrée
-    @param infile_axe <str>: chemin vers le fichier contenant l'axe hydraulique
-    @return <shapely.geometry.LineString>: polyligne représentant l'axe
+    @brief: Extract a unique line from i2s input file
+    @param infile_axis <str>: path to file
+    @return <shapely.geometry.LineString>: polyline representing the hydraulic axis
     """
-    if infile_axe.endswith('.i2s'):
-        with bk.Read(infile_axe) as in_i2s:
+    if infile_axis.endswith('.i2s'):
+        with bk.Read(infile_axis) as in_i2s:
             in_i2s.read_header()
             lines = list(in_i2s.get_open_polylines())
-    elif infile_axe.endswith('.shp'):
-        if shp.get_shape_type(infile_axe) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
-            raise TatooineException("Le fichier %s n'est pas de type POLYLINEZ" % infile_axe)
-        lines = list(shp.get_open_polylines(infile_axe))
+    elif infile_axis.endswith('.shp'):
+        if shp.get_shape_type(infile_axis) not in (shapefile.POLYLINE, shapefile.POLYLINEZ, shapefile.POLYLINEM):
+            raise TatooineException("The type of file %s is not POLYLINE[ZM]" % infile_axis)
+        lines = list(shp.get_open_polylines(infile_axis))
     else:
-        raise NotImplementedError("Seuls les formats i2s et shp sont supportés pour l'axe hydraulique")
+        raise NotImplementedError("Only shp and i2s formats are supported for hydraulic axis")
     nb_lines = len(lines)
     if nb_lines != 1:
-        raise TatooineException("Le fichier '{}' contient {} polylignes au lieu d'une seule pour définir "
-                                "l'axe hydraulique".format(infile_axe, nb_lines))
+        raise TatooineException("The file '{}' contains {} polylines instead of a unique line to define "
+                                "the hydraulic axis".format(infile_axis, nb_lines))
     return lines[0].polyline()
 
 
 def resample_2d_line(coord, dist_max):
     """
     @brief: resamples a 2D polyline by preserving its initial points
-    coord <[tuple]>: vertices coordinates as list of tuples [(x1, y1), (x2, y2), ...]
-    dist_max <float>: maximal distance to refine segments
+    @param coord <[tuple]>: vertices coordinates as list of tuples [(x1, y1), (x2, y2), ...]
+    @param dist_max <float>: maximal distance to refine segments
     """
     new_coord = [coord[0]]  # add first point
 
@@ -99,7 +99,7 @@ def get_field_index(filename, field_id):
         try:
             return names.index(field_id)
         except ValueError:
-            raise TatooineException("Le champ `%s` n'existe pas" % field_id)
+            raise TatooineException("The field `%s` does not exist" % field_id)
 
 
 def set_logger_level(set_to_debug):

@@ -13,186 +13,191 @@ from tatooinemesher.utils import float_vars, get_field_index, get_intersections,
     strictly_increasing, TatooineException
 
 
-class ProfilTravers:
+class CrossSection:
     """
-    ProfilTravers: représente un profil en travers avec éventuellement plusieurs variables en chacun de ses points
+    CrossSection: represents a cross-section with possibly multiple variables at points
 
-    ### Attributs
-    - id <integer|str>: identifiant unique
-    - label <str>: type de profil (`Profils en travers` ou `Épi`)
-    - coord <Coord>: coordonnées (X et Y) avec toutes les variables
+    ### Attributes
+    - id <integer|str>: unique identifier
+    - label <str>: type of section (`Cross-section` ou `Transverse constraint line`)
+    - coord <Coord>: coordinates (X and Y) with all variables
     - nb_points <int>: number of points
-    - geom <shapely.geometry.LineString>: objet géometrique 2D
-    - limites <OrderedDict>: dictionnaire ordonné avec comme clé `id_ligne` et comme valeur
-          un dict avec Xt_profil Xt_ligne, X, Y, ...
-    - dist_proj_axe (créée par une méthode de <SuiteProfilsTravers>)
+    - geom <shapely.geometry.LineString>: 2D geometry
+    - limits <OrderedDict>: ordered dictionary with `id_ligne` as keys and a tuple with
+        (Xt_section, Xt_line, X, Y, ...) as values
+    - dist_proj_axe (used for <CrossSectionSequence>)
 
-    ### Méthodes
-    - _add_limit
+    ### Methods
+    - add_limit
     - get_limit_by_id
-    - get_Xt_lignes
+    - get_limit_by_idx
+    - get_Xt_lines
     - find_and_add_limit
     - common_limits
-    - extraire_lit
-    - sort_limites
-    - calcul_nb_pts_inter
-    - change_coord
+    - extract_bed
+    - sort_limits
+    - compute_nb_pts_inter
+    - project_straight_line
+    - get_segments
+    - get_angles
+    - export_plot_crosswise
     """
-    def __init__(self, id, coord, label='Profil en travers'):
+    def __init__(self, id, coord, label='Cross-section'):
         """
-        Créer un profil à partir d'un semis de points ordonnés (coordonnées X, Y)
-        Aucune limite de lit n'est déclarée lorsque l'objet est créé
+        Create a cross-section from coordinates X and Y
+        Limits are not set at the object instantiation
 
-        @param id <integer|str>: identifiant unique
-        @param label <str>: type de profil (`Profil en travers` ou `Épi`)
+        @param id <integer|str>: unique identifier
+        @label <str>: type of section (`Cross-section` ou `Transverse constraint line`)
         @param coords <[tuple]>: sequence of X and Y coordinates
         """
         self.id = id
         self.label = label
         self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y'])), ['Xt', 'xt'])
         self.nb_points = len(self.coord.array)
-        self.geom = LineString(coord)  # FIXME: contient toujours les points doublons
+        self.geom = LineString(coord)  # FIXME: might contains duplicated points
 
-        self.limites = OrderedDict()
+        self.limits = OrderedDict()
         self.dist_proj_axe = -1
 
     def __repr__(self):
         return "{} #{} ({} points)".format(self.label, self.id, self.nb_points)
 
-    def _add_limit(self, id_ligne, Xt_profil, Xt_ligne, point):
-        """Ajoute une nouvelle limite au profil"""
+    def add_limit(self, line_id, Xt_section, Xt_line, point):
+        """Add a new limit"""
         z_values = {}
         for label in self.coord.coord_labels:
-            z_values[label] = np.interp(Xt_profil, self.coord.array['Xt'], self.coord.array[label])
-        self.limites[id_ligne] = {'Xt_profil': Xt_profil, 'Xt_ligne': Xt_ligne,
-                                  'X': point.x, 'Y': point.y, **z_values}
+            z_values[label] = np.interp(Xt_section, self.coord.array['Xt'], self.coord.array[label])
+        self.limits[line_id] = {'Xt_section': Xt_section, 'Xt_line': Xt_line,
+                                'X': point.x, 'Y': point.y, **z_values}
 
-    def get_limit_by_id(self, id_ligne):
-        return self.limites[id_ligne]
+    def get_limit_by_id(self, line_id):
+        return self.limits[line_id]
 
     def get_limit_by_idx(self, idx):
-        return self.limites[list(self.limites.keys())[idx]]
+        return self.limits[list(self.limits.keys())[idx]]
 
-    def get_Xt_lignes(self, id1, id2):
-        return self.get_limit_by_id(id1)['Xt_ligne'], self.get_limit_by_id(id2)['Xt_ligne']
+    def get_Xt_lines(self, id1, id2):
+        return self.get_limit_by_id(id1)['Xt_line'], self.get_limit_by_id(id2)['Xt_line']
 
-    def find_and_add_limit(self, ligne_contrainte, dist_max=None):
+    def find_and_add_limit(self, constraint_line, dist_max=None):
         """
-        @param ligne_contrainte <shapely.geometry.LineString>: ligne de contrainte 2D
-        @param dist_max <float>: distance de tolérance pour détecter des intersections
+        @param constraint_line <shapely.geometry.LineString>: 2D constraint line
+        @param dist_max <float>: maximum search distance to rescue intersections for limits
         """
-        if self.geom.intersects(ligne_contrainte.geom):
-            intersection = self.geom.intersection(ligne_contrainte.geom)
+        if self.geom.intersects(constraint_line.geom):
+            intersection = self.geom.intersection(constraint_line.geom)
 
             if isinstance(intersection, MultiPoint):
-                logger.warn("L'intersection entre '{}' et '{}' contient plusieurs points, "
-                            "seul le premier est gardé.".format(self, ligne_contrainte))
+                logger.warn("Intersection between '{}' and '{}' contains multiple points, "
+                            "only the first is kept.".format(self, constraint_line))
                 intersection = intersection[0]
+
             if isinstance(intersection, Point):
-                # Calcul des projections
-                Xt_profil = self.geom.project(intersection)
-                Xt_ligne = ligne_contrainte.geom.project(intersection)
-                self._add_limit(ligne_contrainte.id, Xt_profil, Xt_ligne, intersection)
+                # Compute projections
+                Xt_section = self.geom.project(intersection)
+                Xt_line = constraint_line.geom.project(intersection)
+                self.add_limit(constraint_line.id, Xt_section, Xt_line, intersection)
 
             else:
-                raise TatooineException("L'intersection entre '{}' et '{}' ne correspond pas rien!".format(
-                    self, ligne_contrainte))
+                raise TatooineException("Intersection between '{}' and '{}' is empty or not supported: {}".format(
+                    self, constraint_line, type(intersection)))
         else:
             if dist_max is not None:
-                distance = self.geom.distance(ligne_contrainte.geom)
+                distance = self.geom.distance(constraint_line.geom)
                 if distance < dist_max:
-                    # Test de proximité avec tous les points de la ligne de contrainte
-                    for i, coord in enumerate(ligne_contrainte.coord):
+                    for i, coord in enumerate(constraint_line.coord):
+                        # Try to find a point of the constraint line which is in the vicinity of the current section
                         point = Point(coord)
                         dist = self.geom.distance(point)
                         if dist < dist_max:
-                            # On a trouvé le bon point et on ajoute la limite
-                            Xt_ligne = ligne_contrainte.geom.project(point)
-                            Xt_profil = self.geom.project(point)
-                            intersection = self.geom.interpolate(Xt_profil)
-                            self._add_limit(ligne_contrainte.id, Xt_profil, Xt_ligne, intersection)
-                            logger.debug("Ajout de la limite avec la ligne {} après {} itérations (distance = {})"
-                                         .format(ligne_contrainte.id, i, dist))
+                            # A point is found and is considered
+                            Xt_line = constraint_line.geom.project(point)
+                            Xt_section = self.geom.project(point)
+                            intersection = self.geom.interpolate(Xt_section)
+                            self.add_limit(constraint_line.id, Xt_section, Xt_line, intersection)
+                            logger.debug("Add a limit with the line {} after {} iterations (distance = {})"
+                                         .format(constraint_line.id, i, dist))
                             break
 
-    def common_limits(self, limite_ids):
+    def common_limits(self, limit_ids):
         """
-        @brief: Liste les limites communes entre les deux profils (self et other)
-        @param limites
+        @brief: List common limits between 2 cross-sections
+        @param limit_ids: list of limit identifiers of other cross-section
         """
-        out_limites = []
-        for limite_id in self.limites.keys():
-            if limite_id in limite_ids:
-                out_limites.append(limite_id)
-        return out_limites
+        out_limits = []
+        for limit_id in self.limits.keys():
+            if limit_id in limit_ids:
+                out_limits.append(limit_id)
+        return out_limits
 
-    def extraire_lit(self, id_lit_1, id_lit_2):
+    def extract_bed(self, bed1_id, bed2_id):
         """
-        @brief: Extraire les coordonnées d'une partie du profil
-            Les points du profil compris entre les deux lits et avec éventuellement les points de bord interpolés
-            /!\ id_lit_1 et id_lit_2 doivent être dans l'ordre Xt croissant (plante sinon)
-        @return <Lit>: avec les colonnes avec les colonnes ('X', 'Y', 'Xt', 'xt')
+        @brief: Extract coordinates of a portion of a cross-section between 2 limits
+            /!\ bed1_id and bed2_id should be "ordered" correctly, otherwise an exception is raised
+        @return <Bed>: structured array with columns ('X', 'Y', 'Xt', 'xt')
         """
-        limit1 = self.get_limit_by_id(id_lit_1)
-        limit2 = self.get_limit_by_id(id_lit_2)
+        limit1 = self.get_limit_by_id(bed1_id)
+        limit2 = self.get_limit_by_id(bed2_id)
 
-        Xt1 = limit1['Xt_profil']
-        Xt2 = limit2['Xt_profil']
+        Xt1 = limit1['Xt_section']
+        Xt2 = limit2['Xt_section']
 
-        # Vérifie que les Xt sont croissants du id_lit_1 au id_lit_2
+        # Check that Xt are increasing from bed1_id to bed2_id
         if Xt1 > Xt2:
             raise TatooineException("L'ordre des lits ({}, {}) n'est pas par Xt croissant pour le {}".format(
-                id_lit_1, id_lit_2, self))
+                bed1_id, bed2_id, self))
 
-        Xt_profil = self.coord.array['Xt']
-        sub_coord = self.coord.array[np.logical_and(Xt_profil >= Xt1, Xt_profil <= Xt2)]
+        Xt_section = self.coord.array['Xt']
+        sub_coord = self.coord.array[np.logical_and(Xt_section >= Xt1, Xt_section <= Xt2)]
 
-        # Ajoute le premier point si nécessaire
-        if Xt1 not in Xt_profil:
+        # Add starting point if necessary
+        if Xt1 not in Xt_section:
             row = np.array([tuple(limit1[var] if var not in ('Xt', 'xt') else Xt1 for var in sub_coord.dtype.names)],
                            dtype=sub_coord.dtype)
             row['xt'] = 0.0
             sub_coord = np.insert(sub_coord, 0, row)
 
-        # Ajoute le dernier point si nécessaire
-        if Xt2 not in Xt_profil:
+        # Add last point if necessary
+        if Xt2 not in Xt_section:
             row = np.array([tuple(limit2[var] if var not in ('Xt', 'xt') else Xt2 for var in sub_coord.dtype.names)],
                            dtype=sub_coord.dtype)
             row['xt'] = 1.0
             sub_coord = np.append(sub_coord, row)
 
-        # Vérification de l'ordre des points
+        # Check order of points
         if not strictly_increasing(sub_coord['Xt']):
-            logger.debug("/!\ Les Xt ne sont pas strictement croissants")  # FIXME: It should not append
+            logger.debug("/!\ Xt values are not strictly increasing")  # FIXME: It should not happen!
             logger.debug(sub_coord['Xt'])
-            logger.debug("Veuillez vérifier ci-dessus, avec les limites suivantes :")
+            logger.debug("Please check the following limits below:")
             logger.debug(limit1)
             logger.debug(limit2)
             points_to_keep = np.ediff1d(sub_coord['Xt'], to_begin=1.) != 0.
             sub_coord = sub_coord[points_to_keep]
 
-        return Lit(sub_coord, ['xt'])
+        return Bed(sub_coord, ['xt'])
 
-    def sort_limites(self):
+    def sort_limits(self):
         """
-        @brief: Trie les limites par Xt croissants
-        Étape nécessaire pour chercher les limites communes entre deux profils plus facilement
+        @brief: Sort limits by increasing Xt values
         """
-        self.limites = OrderedDict(sorted(self.limites.items(), key=lambda x: x[1]['Xt_profil']))
+        self.limits = OrderedDict(sorted(self.limits.items(), key=lambda x: x[1]['Xt_section']))
 
-    def calcul_nb_pts_inter(self, other, pas_long):
+    def compute_nb_pts_inter(self, other, long_dist):
         """
-        @brief: Calcule le nombre de profils intermédiaires nécessaires
-        /!\ Cette valeur englobe les points de bord (début et fin)
-        @param other <ProfilTravers>: profil en travers
-        @param pas_long <float>: pas longitudinal (en m)
+        @brief: Compute the number of intermediate cross-sections required
+        /!\ This counter includes points at bounds (start and end)
+        @param other <CrossSection>: other cross-section
+        @param long_dist <float>: longitudinal space step (in m)
         """
         dist_min_profil = self.geom.distance(other.geom)
-        return math.ceil(dist_min_profil/pas_long) - 1
+        return math.ceil(dist_min_profil / long_dist) - 1
 
     def project_straight_line(self):
-        """Planar projection on a straight line joining first and ending point of the cross-section"""
-        if self.limites:
+        """
+        @brief: Planar projection on a straight line joining first and last point of the cross-section
+        """
+        if self.limits:
             raise TatooineException("Limits have to be set after calling to project_straight_line!")
 
         # Build straight line
@@ -228,7 +233,7 @@ class ProfilTravers:
             angles.append(angle)
         return angles
 
-    def export_plot_travers(self, fig_path, overwrite=False):
+    def export_plot_crosswise(self, fig_path, overwrite=False):
         x = self.coord.array['Xt']
         z = self.coord.values['Z']
 
@@ -242,8 +247,8 @@ class ProfilTravers:
         ax1.plot(x, z, marker='o', color=color, label='Z')
 
         color = 'tab:green'
-        for limit_name, limit in self.limites.items():
-            ax1.axvline(x=limit['Xt_profil'], linestyle='-', color=color)
+        for limit_name, limit in self.limits.items():
+            ax1.axvline(x=limit['Xt_section'], linestyle='-', color=color)
 
         color = 'tab:blue'
         ax2 = ax1.twinx()
@@ -259,51 +264,49 @@ class ProfilTravers:
         plt.savefig(fig_path, dpi=400)
 
 
-class Lit(Coord):
+class Bed(Coord):
     """
-    Lit(s): morceau de profil borné par des limites
-    ~> Hérite de la classe <Coord>
+    Bed: portion of a cross-section
 
-    ### Attributs
+    ### Attributes
     - coord
 
-    ### Méthodes
-    Toutes ces méthodes retournent un array avec les colonnes VARS2INT
+    ### Methods
     - interp_along_lit_auto
-    - interp_along_lit
+    - interp_coord_along_lit
     - interp_coord_linear
     """
-    def interp_coord_along_lit_auto(self, pas_trans, nb_pts_trans=None):
-        if nb_pts_trans is None:
-            nb_pts_trans = math.ceil((self.array['Xt'][-1] - self.array['Xt'][0])/pas_trans) + 1
-        Xt_adm_list = np.linspace(0., 1., num=nb_pts_trans)
+    def interp_coord_along_lit_auto(self, lat_step, nb_pts_lat=None):
+        if nb_pts_lat is None:
+            nb_pts_lat = math.ceil((self.array['Xt'][-1] - self.array['Xt'][0])/lat_step) + 1
+        Xt_adm_list = np.linspace(0., 1., num=nb_pts_lat)
         return self.interp_coord_along_lit(Xt_adm_list)
 
     def interp_coord_along_lit(self, Xt_adm_list):
         """
-        @brief: Echantionnage du lit (interpolation sur vecteur adimensionné de Xt)
-        @param Xt_adm_list <1D-array float>: distance adimensionnée (valeurs entre 0 et 1)
+        @brief: Interpolate coordinates along bed at requested dimensionless curvilinear distances
+        @param Xt_adm_list <1D-array float>: dimensionless distances (ranging from 0 and 1)
         """
-        nb_pts_trans = len(Xt_adm_list)
-        array = np.empty(nb_pts_trans, dtype=float_vars(Coord.XY + ['Xt', 'xt']))
+        nb_pts_lat = len(Xt_adm_list)
+        array = np.empty(nb_pts_lat, dtype=float_vars(Coord.XY + ['Xt', 'xt']))
         for label in Coord.XY + ['Xt']:
             array[label] = np.interp(Xt_adm_list, self.array['xt'], self.array[label])
         array['xt'] = Xt_adm_list
         return array
 
-    def interp_coord_linear(self, other, coeff, nb_pts_trans):
+    def interp_coord_linear(self, other, coeff, nb_pts_lat):
         """
-        @brief: Interpolation linéaire entre deux lits
-        @param other <Lit>: profil en travers amont ou aval
-        @param coeff <float>: pondération entre self et other (0=self, 1=other)
-        @param nb_pts_trans <int>: nombre de points transversalement
+        @brief: Linear interpolation between 2 beds
+        @param other <Bed>: portion of the other cross-section (upstream or downstream)
+        @param coeff <float>: weight between self and other (0=self, 1=other)
+        @param nb_pts_lat <int>: number of points crosswise
         """
-        Xt_adm_list = np.linspace(0., 1., num=nb_pts_trans)
+        Xt_adm_list = np.linspace(0., 1., num=nb_pts_lat)
 
         array_1 = self.interp_coord_along_lit(Xt_adm_list)
         array_2 = other.interp_coord_along_lit(Xt_adm_list)
 
-        array = np.empty(nb_pts_trans, dtype=float_vars(Coord.XY + ['xt', 'Xt_amont', 'Xt_aval']))
+        array = np.empty(nb_pts_lat, dtype=float_vars(Coord.XY + ['xt', 'Xt_amont', 'Xt_aval']))
         for var in Coord.XY:
             array[var] = (1 - coeff)*array_1[var] + coeff*array_2[var]
         array['Xt_amont'] = array_1['Xt']
@@ -311,27 +314,34 @@ class Lit(Coord):
         return array
 
 
-class SuiteProfilsTravers:
+class CrossSectionSequence:
     """
-    SuiteProfilsTravers: ensemble de profils en travers
+    CrossSectionSequence: ordered list of cross-sections
 
-    ### Attributs
-    - suite <[ProfilTravers]>
+    ### Attributes
+    - section_list <[CrossSection]>: ordered list of cross-sections
 
-    ### Méthodes
+    ### Methods
+    - add_section
+    - from_file
     - find_and_add_limits
-    - calculer_dist_proj_axe
+    - check_intersections
+    - compute_dist_proj_axe
+    - sort_by_dist
+    - export_sections_shp
+    - add_constant_layer
     """
 
     def __init__(self):
-        self.suite = []
+        self.section_list = []
 
-    def add_profile(self, profile):
-        self.suite.append(profile)
+    def add_section(self, section):
+        self.section_list.append(section)
 
     @staticmethod
     def from_file(filename, label, field_id=None, project_straight_line=False):
-        profils_travers = SuiteProfilsTravers()
+        section_seq = CrossSectionSequence()
+
         if filename.endswith('.i3s'):
             with bk.Read(filename) as in_i3s:
                 in_i3s.read_header()
@@ -339,9 +349,10 @@ class SuiteProfilsTravers:
                     line_id = i if field_id is None else line.attributes()[0]  # Use `Value` if field is not None
                     z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars('Z'))
                     line = line.to_2d()
-                    profile = ProfilTravers(line_id, list(line.polyline().coords), label)
-                    profile.coord.values = z_array
-                    profils_travers.add_profile(profile)
+                    section = CrossSection(line_id, list(line.polyline().coords), label)
+                    section.coord.values = z_array
+                    section_seq.add_section(section)
+
         elif filename.endswith('.shp'):
             shp_type = shp.get_shape_type(filename)
             if shp_type in (shapefile.POLYLINEZ, shapefile.POLYLINEM):
@@ -350,9 +361,10 @@ class SuiteProfilsTravers:
                     line_id = i if field_id is None else line.attributes()[field_id_index]
                     z_array = np.array([(coord[2],) for coord in line.polyline().coords], dtype=float_vars(['Z']))
                     line = line.to_2d()
-                    profile = ProfilTravers(line_id, list(line.polyline().coords), label)
-                    profile.coord.values = z_array
-                    profils_travers.add_profile(profile)
+                    section = CrossSection(line_id, list(line.polyline().coords), label)
+                    section.coord.values = z_array
+                    section_seq.add_section(section)
+
             elif shp_type == shapefile.POINTZ:
                 field_id_index = get_field_index(filename, field_id)
                 field_indexes, field_names = [], []
@@ -366,69 +378,71 @@ class SuiteProfilsTravers:
                     point_id = attributes[field_id_index]  # FIXME: should raise exception if field_id_index is None!
                     if i > 0 and point_id != last_point_id:
                         z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
-                        profile = ProfilTravers(last_point_id, coords, label)
-                        profile.coord.values = z_array
-                        profils_travers.add_profile(profile)
+                        section = CrossSection(last_point_id, coords, label)
+                        section.coord.values = z_array
+                        section_seq.add_section(section)
                         coords, z_layers = [], []
                     coords.append(point[:2])
                     z_layers.append((point[2],) + tuple(attributes[index] for index in field_indexes))
                     last_point_id = point_id
                 z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
-                profile = ProfilTravers(last_point_id, coords, label)
-                profile.coord.values = z_array
-                profils_travers.add_profile(profile)
+                section = CrossSection(last_point_id, coords, label)
+                section.coord.values = z_array
+                section_seq.add_section(section)
+
             else:
-                raise TatooineException("Le fichier %s n'est pas de type POINTZ ou POLYLINEZ[M]" % filename)
+                raise TatooineException("The type of file %s is not POINTZ or POLYLINEZ[M]" % filename)
+
         else:
-            raise NotImplementedError("Seuls les formats i3s, shp sont supportés pour les profils en travers")
+            raise NotImplementedError("Only shp and i3s formats are supported for cross-sections")
 
         if project_straight_line:
-            for profile in profils_travers:
-                profile.project_straight_line()
-        return profils_travers
+            for section in section_seq:
+                section.project_straight_line()
+        return section_seq
 
     def __add__(self, other):
-        newsuite = deepcopy(self)
-        newsuite.suite = self.suite + other.suite
-        return newsuite
+        new_suite = deepcopy(self)
+        new_suite.section_list = self.section_list + other.suite
+        return new_suite
 
     def __getitem__(self, index):
         if isinstance(index, slice):
-            newsuite = deepcopy(self)
-            newsuite.suite = self.suite[index]
-            return newsuite
+            new_suite = deepcopy(self)
+            new_suite.section_list = self.section_list[index]
+            return new_suite
         else:
-            return self.suite[index]
+            return self.section_list[index]
 
     def __len__(self):
-        return len(self.suite)
+        return len(self.section_list)
 
     def __repr__(self):
-        return [profil for profil in self.suite].__repr__()
+        return [section for section in self.section_list].__repr__()
 
-    def find_and_add_limits(self, lignes_contraintes, dist_max):
+    def find_and_add_limits(self, constraint_lines, dist_max):
         """
-        @param lignes_contraintes <[LigneContrainte]>: lignes de contraintes
-        @param dist_max <float>: distance de tolérance pour détecter des intersections
+        @param constraint_lines <[ConstraintLine]>: list of constraint lines
+        @param dist_max <float>: maximum search distance to rescue intersections for limits
         """
-        logger.info("~> Recherche des limites de lits")
-        for i, profil_travers in enumerate(self):
-            for ligne_contrainte in lignes_contraintes:
-                profil_travers.find_and_add_limit(ligne_contrainte, dist_max)
-            profil_travers.sort_limites()
-            limits = profil_travers.limites.keys()  # only to print
+        logger.info("~> Looking for limits")
+        for i, section in enumerate(self):
+            for constraint_line in constraint_lines:
+                section.find_and_add_limit(constraint_line, dist_max)
+            section.sort_limits()
 
-            logger.debug("> {}".format(profil_travers))
-            logger.debug("{} limites trouvées avec les lignes {}".format(len(limits), list(limits)))
+            limits = section.limits.keys()  # only to print
+            logger.debug("> {}".format(section))
+            logger.debug("{} limits found with lines {}".format(len(limits), list(limits)))
 
     def check_intersections(self):
         """Display warning with intersections details"""
-        logger.info("~> Vérifications non intersections des profils et des épis")
-        intersections = get_intersections([profil.geom for profil in self])
+        logger.info("~> Checking that cross-sections do not intersect")
+        intersections = get_intersections([section.geom for section in self])
         if intersections:
-            logger.warn("Les intersections suivantes sont trouvées")
+            logger.warn("Following limits are found:")
             for (i, j) in intersections:
-                logger.warn("- entre '{}' et '{}'".format(self[i], self[j]))
+                logger.warn("- between '{}' and '{}'".format(self[i], self[j]))
 
     def compute_dist_proj_axe(self, axe_geom, dist_max):
         """
@@ -438,41 +452,41 @@ class SuiteProfilsTravers:
         """
         logger.info("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
         to_keep_list = []
-        for profil in self:
-            profil_geom = profil.geom
-            if profil_geom.intersects(axe_geom):
-                intersection = profil_geom.intersection(axe_geom)
+        for section in self:
+            section_geom = section.geom
+            if section_geom.intersects(axe_geom):
+                intersection = section_geom.intersection(axe_geom)
                 if isinstance(intersection, Point):
-                    profil.dist_proj_axe = axe_geom.project(intersection)
+                    section.dist_proj_axe = axe_geom.project(intersection)
                 else:
                     raise TatooineException("L'intersection entre le '{}' et l'axe hydraulique "
-                                            "n'est pas un point unique".format(profil))
+                                            "n'est pas un point unique".format(section))
             else:
                 if dist_max is not None:
                     for pos in (0, -1):
-                        dist = profil_geom.distance(Point(axe_geom.coords[pos]))
+                        dist = section_geom.distance(Point(axe_geom.coords[pos]))
                         if dist < dist_max:
-                            profil.dist_proj_axe = 0.0 if pos == 0 else axe_geom.length
-            if profil.dist_proj_axe == -1:
-                logger.warn("{} n'intersecte pas l'axe (distance = {}m) et est ignoré".format(
-                    profil, profil.geom.distance(axe_geom)))
+                            section.dist_proj_axe = 0.0 if pos == 0 else axe_geom.length
+            if section.dist_proj_axe == -1:
+                logger.warn("{} do not intersect the hydraulic axis (distance = {}m) and is ignored".format(
+                    section, section.geom.distance(axe_geom)))
                 to_keep_list.append(False)
             else:
                 to_keep_list.append(True)
 
-        self.suite = [p for p, to_keep in zip(self.suite, to_keep_list) if to_keep]
+        self.section_list = [p for p, to_keep in zip(self.section_list, to_keep_list) if to_keep]
 
     def sort_by_dist(self):
-        self.suite = sorted(self.suite, key=lambda x: x.dist_proj_axe)
+        self.section_list = sorted(self.section_list, key=lambda x: x.dist_proj_axe)
 
-    def export_profil_shp(self, outfile_profils):
+    def export_sections_shp(self, out_path):
         """
-        Write a shapefile with 3D LineString
-        @param outfile_profils <str>: output file name
+        Write a shapefile with section as 3D LineString
+        @param out_path <str>: output file name
         """
-        with shapefile.Writer(outfile_profils, shapeType=shapefile.POLYLINEZ) as w:
+        with shapefile.Writer(out_path, shapeType=shapefile.POLYLINEZ) as w:
             w.field('profil_id', 'C')
-            for profil in self.suite:
+            for profil in self.section_list:
                 array = profil.coord.array
                 z_array = profil.coord.values['Z']
                 coords = [(row['X'], row['Y'], z) for row, z in zip(array, z_array)]
@@ -480,6 +494,6 @@ class SuiteProfilsTravers:
                 w.record(profil_id=str(profil.id))
 
     def add_constant_layer(self, name, thickness):
-        for profil in self.suite:
-            coord = profil.coord
+        for section in self.section_list:
+            coord = section.coord
             coord.add_single_layer(name, coord.array['Z'] - thickness)

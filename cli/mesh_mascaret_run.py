@@ -14,9 +14,9 @@ from crue10.utils import CrueError
 from mascaret.mascaret_file import MascaretFile
 from mascaret.mascaretgeo_file import MascaretGeoFile
 
-from tatooinemesher.constraint_lines import LigneContrainte
+from tatooinemesher.constraint_lines import ConstraintLine
 from tatooinemesher.mesh_constructor import MeshConstructor
-from tatooinemesher.sections import ProfilTravers, SuiteProfilsTravers
+from tatooinemesher.sections import CrossSection, CrossSectionSequence
 from tatooinemesher.utils.arg_command_line import MyArgParse
 from tatooinemesher.utils import logger, set_logger_level, TatooineException
 
@@ -38,34 +38,36 @@ def mesh_mascaret_run(args):
 
     for reach_id, reach in masc_geo.reaches.items():
         logger.info(reach)
-        profils_travers = SuiteProfilsTravers()
+        section_seq = CrossSectionSequence()
 
         dist_proj_axe = 0.0
         prev_x, prev_y = 0.0, 0.0
-        for idx_section, section in enumerate(reach):
-            profile = ProfilTravers(section.id, [(x, y) for x, y in zip(section.x, section.y)], 'Section')
+        for section_idx, masc_section in enumerate(reach):
+            section = CrossSection(masc_section.id,
+                                   [(x, y) for x, y in zip(masc_section.x, masc_section.y)],
+                                   'Section')
 
-            profile.coord.values = np.core.records.fromarrays(
-                np.column_stack((section.z,)).T,
+            section.coord.values = np.core.records.fromarrays(
+                np.column_stack((masc_section.z,)).T,
                 names=VARIABLES_FROM_GEOMETRY
             )
-            x, y = section.axis
-            if idx_section != 0:
+            x, y = masc_section.axis
+            if section_idx != 0:
                 dist_proj_axe += sqrt((x - prev_x)**2 + (y - prev_y)**2)
 
-            profile.dist_proj_axe = dist_proj_axe
+            section.dist_proj_axe = dist_proj_axe
             prev_x, prev_y = x, y
 
-            profils_travers.add_profile(profile)
+            section_seq.add_section(section)
 
-        if len(profils_travers) >= 2:
-            profils_travers.check_intersections()
+        if len(section_seq) >= 2:
+            section_seq.check_intersections()
             # profils_travers.sort_by_dist() is useless because profiles are already sorted
-            lignes_contraintes = LigneContrainte.get_lines_and_set_limits_from_profils(profils_travers)
+            constraint_lines = ConstraintLine.get_lines_and_set_limits_from_sections(section_seq)
 
-            mesh_constr = MeshConstructor(profils_travers=profils_travers,
-                                          pas_trans=args.pas_trans, nb_pts_trans=args.nb_pts_trans)
-            mesh_constr.build_interp(lignes_contraintes, args.pas_long, args.constant_ech_long)
+            mesh_constr = MeshConstructor(section_seq=section_seq,
+                                          lat_step=args.lat_step, nb_pts_lat=args.nb_pts_lat)
+            mesh_constr.build_interp(constraint_lines, args.long_step, args.constant_long_disc)
             mesh_constr.build_mesh(True)
 
             global_mesh_constr.append_mesh_constr(mesh_constr)
@@ -142,11 +144,11 @@ parser_infiles.add_argument("--infile_res", help="Mascaret results file (*.opt, 
 parser_mesh = parser.add_argument_group("Parameters to generate the 2D mesh")
 parser_mesh.add_argument("--dist_max", type=float, help="maximum search distance to rescue intersections "
                                                         "for limits (in m)", default=0.01)
-parser.add_argument("--pas_long", type=float, help="longitudinal space step (in m)")
+parser.add_argument("--long_step", type=float, help="longitudinal space step (in m)")
 group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument("--pas_trans", type=float, help="lateral space step (in m)")
-group.add_argument("--nb_pts_trans", type=int, help="number of nodes laterally")
-parser_mesh.add_argument("--constant_ech_long",
+group.add_argument("--lat_step", type=float, help="lateral space step (in m)")
+group.add_argument("--nb_pts_lat", type=int, help="number of nodes crosswise")
+parser_mesh.add_argument("--constant_long_disc",
                          help="method to compute the number of intermediate profiles: "
                               "per profile (constant, ie True) or per bed (variable, ie False)",
                          action='store_true')
@@ -154,7 +156,7 @@ parser_mesh.add_argument("--constant_ech_long",
 # Outputs
 parser_outfiles = parser.add_argument_group('Output file')
 parser_outfiles.add_argument("outfile_mesh", help="Telemac results file")
-parser_outfiles.add_argument("--lang", help="Language for standard variables in output file", default='fr',
+parser_outfiles.add_argument("--lang", help="language for standard variables in output file", default='fr',
                              choices=['en', 'fr'])
 
 if __name__ == '__main__':
