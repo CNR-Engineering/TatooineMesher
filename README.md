@@ -24,3 +24,6 @@ See [wiki pages](https://github.com/CNR-Engineering/TatooineMesher/wiki) to lear
 [PyTelTools](https://github.com/CNR-Engineering/PyTelTools) and [Crue10_tools](https://github.com/CNR-Engineering/Crue10_tools) are dependencies that can be installed in another directory
 and linked with the `PYTHONPATH` environment variable.
 These packages are used to read/write some specific file formats of Telemac, Mascaret and Crue10 tools.
+
+## Reference
+_TatooineMesher: Anisotropic interpolation from 1D cross-sections and 2D channel mesher_, **XXVIth TELEMAC-MASCARET User Conference 2019**, Toulouse (France). See [paper](https://github.com/CNR-Engineering/TatooineMesher/raw/master/media/publi/article/TUC2019_paper_Duron-et-al_TatooineMesher.pdf) and [presentation](https://github.com/CNR-Engineering/TatooineMesher/raw/master/media/publi/presentation/TUC2019_slides_Duron-et-al_TatooineMesher.pdf).
