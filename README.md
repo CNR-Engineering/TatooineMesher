@@ -17,9 +17,12 @@ The command line scripts of TatooineMesher are located in the `cli` folder.
  
 See [wiki pages](https://github.com/CNR-Engineering/TatooineMesher/wiki) to learn how to use them.
 
-## Pre-requisites
+## Pre-requisites and installation
 
-**Python 3** with **packages** listed in [requirements.txt](requirements.txt).
+**Python 3** with **packages** listed in [requirements.txt](requirements.txt). To install them use:
+```bash
+pip install -r requirements.txt
+```
 
 [PyTelTools](https://github.com/CNR-Engineering/PyTelTools) and [Crue10_tools](https://github.com/CNR-Engineering/Crue10_tools) are dependencies that can be installed in another directory
 and linked with the `PYTHONPATH` environment variable.
