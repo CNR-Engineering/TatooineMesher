@@ -50,7 +50,7 @@ class MeshConstructor:
     - summary
     - export_points
     - export_segments
-    - export_profiles
+    - export_sections
     - export_mesh
     - interp_values_from_geom
     - get_merge_triangulation
@@ -345,9 +345,9 @@ class MeshConstructor:
 
     def build_mesh(self, in_floworiented_crs=False, opts='p'):
         """
-        Build mesh under constraints
-        :param in_floworiented_crs: boolean to which coordinate system is usec
-        :param opts: options for the triangulation.
+        @brief: Build mesh under constraints
+        @param in_floworiented_crs <bool>: boolean to which coordinate system is usec
+        @param opts <str>: options for the triangulation.
             `p` - Triangulates a Planar Straight Line Graph.
             `q` - Quality mesh generation with no angles smaller than 20 degrees.
                   An alternate minimum angle may be specified after the `q`.
@@ -428,10 +428,11 @@ class MeshConstructor:
         else:
             raise TatooineException("Only the shp format is supported for segments")
 
-    def export_profiles(self, path):
+    def export_sections(self, path):
         """
         Export generated profiles in a shp, i3s or georefC file
         /!\ Not relevant if constant_long_disc is False
+        TODO: Use class MascaretGeoFile
         """
         values = self.interp_values_from_geom()
         if path.endswith('.georefC'):
@@ -549,7 +550,7 @@ class MeshConstructor:
             raise NotImplementedError("Only slf, t3s and xml formats are supported for the output mesh")
 
     def compute_values_in_floodplain(self):
-        """Fill Zf and set nan for other variables"""
+        """Fill bottom elevation and set nan for other variables"""
         values = np.empty((self.nb_var, len(self.nodes_fp)))
         values.fill(np.nan)
         values[0, :] = self.nodes_fp['Z']
@@ -636,6 +637,7 @@ class MeshConstructor:
         return new_values
 
     def interp_values_from_geom(self):
+        """Interpolate values from geometry at cross-sections and casiers"""
         values = np.empty((self.nb_var, self.nb_nodes))
         values.fill(np.nan)
         if self.interp_values in ('BILINEAR', 'BICUBIC', 'BIVARIATE_SPLINE'):
@@ -645,34 +647,17 @@ class MeshConstructor:
         values[:, self.nb_nodes_in_riverbed:self.nb_nodes] = self.compute_values_in_floodplain()
         return values
 
-    def interp_values_from_res(self, values_at_profiles, z_at_casiers, pos_z):
-        """Interpolate values from results at profiles and casiers"""
-        nb_var = values_at_profiles.shape[1]
+    def interp_values_from_res(self, values_at_sections, z_at_casiers, pos_z):
+        """Interpolate values from results at cross-sections and casiers"""
+        nb_var = values_at_sections.shape[1]
         values = np.empty((nb_var, self.nb_nodes))
         values.fill(np.nan)
         xl_all = self.points['zone'] + self.points['xl']
         for i_var in range(nb_var):
-            values[i_var, :self.nb_nodes_in_riverbed] = np.interp(xl_all, np.arange(len(self.section_seq),
-                                                                                    dtype=np.float),
-                                                                  values_at_profiles[:, i_var])
+            values[i_var, :self.nb_nodes_in_riverbed] = np.interp(xl_all,
+                                                                  np.arange(len(self.section_seq), dtype=np.float),
+                                                                  values_at_sections[:, i_var])
         if self.has_floodplain:
             for (pos_start, pos_end), z in zip(self.casiers_nodes_idx, z_at_casiers):
                 values[pos_z, pos_start:pos_end] = z
         return values
-
-    @staticmethod
-    def get_merge_triangulation(mesh_constr_list):
-        """
-        Merge multiple distinct triangulations (no merge at boundaries or overlaps).
-        @param mesh_constr_list <[MeshConstructor]>: list of mesh constructors
-        """
-        out_tri = {}
-        for mesh_constr in mesh_constr_list:
-            if not out_tri:  # set initial values from first iteration
-                out_tri['triangles'] = mesh_constr.triangle['triangles']
-                out_tri['vertices'] = mesh_constr.triangle['vertices']
-            else:  # concatenate with current sub-mesh for next iterations
-                out_tri['triangles'] = np.vstack((out_tri['triangles'],
-                                                  out_tri['vertices'].shape[0] + mesh_constr.triangle['triangles']))
-                out_tri['vertices'] = np.vstack((out_tri['vertices'], mesh_constr.triangle['vertices']))
-        return out_tri

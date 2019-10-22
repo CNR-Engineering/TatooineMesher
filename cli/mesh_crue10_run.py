@@ -3,7 +3,6 @@ mesh_crue10_run.py
 
 Génération d'un fichier résultat 2D (format Telemac) avec plusieurs variables et éventuellement plusieurs temps.
 La taille des éléments du maillage est controlable.
-Seulement les résultats (ou données) aux sections rattachées à des branches 20 sont considérées. (FIXME)
 
 Si un fichier rcal est spécifié alors on peut traiter :
 - tous les calculs permanents
@@ -79,33 +78,35 @@ def mesh_crue10_run(args):
             logger.info("===== TRAITEMENT DE LA BRANCHE %s =====" % branche.id)
             axe = branche.geom
             try:
-                profils_travers = CrossSectionSequence()
-                for section in branche.sections:
-                    if isinstance(section, SectionProfil):
-                        coords = list(section.get_coord(add_z=True))
-                        profile = CrossSection(section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
+                section_seq = CrossSectionSequence()
+                for crue_section in branche.sections:
+                    if isinstance(crue_section, SectionProfil):
+                        coords = list(crue_section.get_coord(add_z=True))
+                        section = CrossSection(crue_section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
 
                         # Determine some variables (constant over the simulation) from the geometry
                         z = np.array([coord[2] for coord in coords])
-                        is_bed_active = section.get_is_bed_active_array()
-                        mean_strickler = section.get_friction_coeff_array()
-                        profile.coord.values = np.core.records.fromarrays(
+                        is_bed_active = crue_section.get_is_bed_active_array()
+                        mean_strickler = crue_section.get_friction_coeff_array()
+                        section.coord.values = np.core.records.fromarrays(
                             np.column_stack((z, is_bed_active, mean_strickler)).T,
                             names=VARIABLES_FROM_GEOMETRY
                         )
 
-                        profils_travers.add_section(profile)
+                        section_seq.add_section(section)
 
-                profils_travers.compute_dist_proj_axe(axe, args.dist_max)
-                if len(profils_travers) >= 2:
-                    profils_travers.check_intersections()
+                section_seq.compute_dist_proj_axe(axe, args.dist_max)
+                if len(section_seq) >= 2:
+                    section_seq.check_intersections()
                     # section_seq.sort_by_dist() is useless because profiles are already sorted
-                    lignes_contraintes = ConstraintLine.get_lines_and_set_limits_from_sections(profils_travers)
+                    constraint_lines = ConstraintLine.get_lines_and_set_limits_from_sections(
+                        section_seq, args.interp_constraint_lines
+                    )
 
-                    mesh_constr = MeshConstructor(section_seq=profils_travers,
-                                                  lat_step=args.lat_step, nb_pts_lat=args.nb_pts_lat)
-                    mesh_constr.build_interp(lignes_contraintes, args.long_step, args.constant_long_disc)
-                    mesh_constr.build_mesh(True)
+                    mesh_constr = MeshConstructor(section_seq=section_seq, lat_step=args.lat_step,
+                                                  nb_pts_lat=args.nb_pts_lat, interp_values=args.interp_values)
+                    mesh_constr.build_interp(constraint_lines, args.long_step, args.constant_long_disc)
+                    mesh_constr.build_mesh(in_floworiented_crs=True)
 
                     global_mesh_constr.append_mesh_constr(mesh_constr)
                 else:
@@ -272,47 +273,30 @@ def mesh_crue10_run(args):
         global_mesh_constr.export_mesh(args.outfile_mesh, lang=args.lang)
 
     t2 = perf_counter()
-    logger.info("=> le temps d'execution est de : {}s".format(t2-t1))
+    logger.info("=> Execution time: {}s".format(t2 - t1))
 
 
 parser = MyArgParse(description=__doc__)
+parser.add_common_args(project_straight_line=False, constant_long_disc=True)
 # Inputs
-parser_infiles = parser.add_argument_group("Modèle et run Crue10 à traiter")
-parser_infiles.add_argument("infile_etu", help="fichier d'étude Crue10 (etu.xml)")
-parser_infiles.add_argument("model_name", help="nom du modèle")
-parser_infiles.add_argument("--infile_rcal", help="fichier de résultat (rcal.xml)")
-parser_infiles.add_argument("--calc_unsteady", help="nom du calcul transitoire à traiter "
-                                                 "(sinon considère tous les calculs permanents)")
-parser_infiles.add_argument("--infile_dem", help="fichier raster contenant la bathymétrie du champ majeur pour"
-                                                 " traiter les casiers (format GeoTIFF, extension .tif)")
-
+parser.infile_args.title = "Crue10 input model and run (and the optional DEM)"
+parser.infile_args.add_argument("infile_etu", help="Crue10 study file (*.etu.xml)")
+parser.infile_args.add_argument("model_name", help="model name")
+parser.infile_args.add_argument("--infile_rcal", help="Crue10 results file (*.rcal.xml)")
+parser.infile_args.add_argument("--calc_unsteady", help="name of the unsteady file "
+                                                        "(otherwise considers all steady calculations)")
+parser.infile_args.add_argument("--infile_dem", help='Raster file (geoTIFF format) containing bottom elevation for '
+                                                     'the "casiers" in the floodplain (*.tif)')
 # Parameters to select branches
-parser_branches = parser.add_argument_group("Paramètres pour choisir les branches à traiter")
+parser_branches = parser.add_argument_group("Parameters to filter branches")
 parser_branches.add_argument("--branch_types_filter", nargs='+', default=Branche.TYPES_IN_MINOR_BED,
-                             help="types des branches à traiter")
+                             help="types of branches to consider")
 parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
-                             help="chaîne(s) de caractères pour ne conserver que les branches dont le nom contient"
-                                  " une de ces expressions")
-
+                             help="list of patterns to filter branches which name does not contain any pattern")
 # Mesh parameters
-parser_mesh = parser.add_argument_group("Paramètres pour la génération du maillage 2D")
-parser_mesh.add_argument("--dist_max", type=float, help="distance de recherche maxi des 'intersections fictifs' "
-                                                        "pour les limites de lits (en m)", default=0.01)
-parser.add_argument("--long_step", type=float, help="pas d'espace longitudinal (en m)")
-parser.add_argument("--floodplain_step", type=float, help="pas d'espace pour le champ majeur (en m)", default=None)
-group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument("--lat_step", type=float, help="pas d'espace transversal (en m)")
-group.add_argument("--nb_pts_lat", type=int, help="nombre de noeuds transveralement")
-parser_mesh.add_argument("--constant_long_disc",
-                         help="méthode de calcul du nombre de profils interpolés entre profils : "
-                              "par profil (constant, ie True) ou par lit (variable, ie False)",
-                         action='store_true')
+parser.mesher_args.add_argument("--floodplain_step", type=float, default=None,
+                                help="floodplain space step (in m)")
 
-# Outputs
-parser_outfiles = parser.add_argument_group('Fichier de sortie')
-parser_outfiles.add_argument("outfile_mesh", help="Résultat 2D au format slf (Telemac)")
-parser_outfiles.add_argument("--lang", help="Langue pour nommer les variables du fichier de sortie", default='fr',
-                             choices=['en', 'fr'])
 
 if __name__ == '__main__':
     args = parser.parse_args()

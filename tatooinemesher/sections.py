@@ -445,7 +445,7 @@ class CrossSectionSequence:
                 logger.warn("- between '{}' and '{}'".format(self[i], self[j]))
 
     def compute_dist_proj_axe(self, axe_geom, dist_max):
-        """
+        """ TODO: translate
         @brief: Calculer la distance projetée sur l'axe
         @param axe_geom <shapely.geometry.LineString>: axe hydraulique (/!\ Orientation de l'axe)
         @param dist_max <float>: distance de tolérance pour détecter des intersections

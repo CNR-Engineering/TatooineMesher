@@ -45,7 +45,7 @@ def mesh_mascaret_run(args):
         for section_idx, masc_section in enumerate(reach):
             section = CrossSection(masc_section.id,
                                    [(x, y) for x, y in zip(masc_section.x, masc_section.y)],
-                                   'Section')
+                                   "Cross-section")
 
             section.coord.values = np.core.records.fromarrays(
                 np.column_stack((masc_section.z,)).T,
@@ -62,13 +62,14 @@ def mesh_mascaret_run(args):
 
         if len(section_seq) >= 2:
             section_seq.check_intersections()
-            # profils_travers.sort_by_dist() is useless because profiles are already sorted
-            constraint_lines = ConstraintLine.get_lines_and_set_limits_from_sections(section_seq)
+            # section_seq.sort_by_dist() is useless because cross-sections are already sorted
+            constraint_lines = ConstraintLine.get_lines_and_set_limits_from_sections(section_seq,
+                                                                                     args.interp_constraint_lines)
 
-            mesh_constr = MeshConstructor(section_seq=section_seq,
-                                          lat_step=args.lat_step, nb_pts_lat=args.nb_pts_lat)
+            mesh_constr = MeshConstructor(section_seq=section_seq, lat_step=args.lat_step,
+                                          nb_pts_lat=args.nb_pts_lat, interp_values=args.interp_values)
             mesh_constr.build_interp(constraint_lines, args.long_step, args.constant_long_disc)
-            mesh_constr.build_mesh(True)
+            mesh_constr.build_mesh(in_floworiented_crs=True)
 
             global_mesh_constr.append_mesh_constr(mesh_constr)
         else:
@@ -115,10 +116,10 @@ def mesh_mascaret_run(args):
             resout.write_header(output_header)
 
             for idx_time, time in enumerate(masc_res.times):
-                variables_at_profiles = masc_res.get_values(idx_time)[reach.id]
+                variables_at_sections = masc_res.get_values(idx_time)[reach.id]
 
                 # Interpolate between sections and set in casiers
-                values_res = global_mesh_constr.interp_values_from_res(variables_at_profiles, None, pos_z)
+                values_res = global_mesh_constr.interp_values_from_res(variables_at_sections, None, pos_z)
 
                 # Compute water depth: H = Z - Zf and clip below 0m (avoid negative values)
                 depth = np.clip(values_res[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
@@ -135,29 +136,11 @@ def mesh_mascaret_run(args):
 
 
 parser = MyArgParse(description=__doc__)
+parser.add_common_args(constant_long_disc=True)
 # Inputs
-parser_infiles = parser.add_argument_group("Mascaret input files")
-parser_infiles.add_argument("infile_geo", help="Mascaret geometry file (*.georef, *.georefC)")
-parser_infiles.add_argument("--infile_res", help="Mascaret results file (*.opt, *.rub)")
-
-# Mesh parameters
-parser_mesh = parser.add_argument_group("Parameters to generate the 2D mesh")
-parser_mesh.add_argument("--dist_max", type=float, help="maximum search distance to rescue intersections "
-                                                        "for limits (in m)", default=0.01)
-parser.add_argument("--long_step", type=float, help="longitudinal space step (in m)")
-group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument("--lat_step", type=float, help="lateral space step (in m)")
-group.add_argument("--nb_pts_lat", type=int, help="number of nodes crosswise")
-parser_mesh.add_argument("--constant_long_disc",
-                         help="method to compute the number of intermediate profiles: "
-                              "per profile (constant, ie True) or per bed (variable, ie False)",
-                         action='store_true')
-
-# Outputs
-parser_outfiles = parser.add_argument_group('Output file')
-parser_outfiles.add_argument("outfile_mesh", help="Telemac results file")
-parser_outfiles.add_argument("--lang", help="language for standard variables in output file", default='fr',
-                             choices=['en', 'fr'])
+parser.infile_args.title = "Input Mascaret files arguments"
+parser.infile_args.add_argument("infile_geo", help="Mascaret geometry file (*.georef, *.georefC)")
+parser.infile_args.add_argument("--infile_res", help="Mascaret results file (*.opt, *.rub)")
 
 if __name__ == '__main__':
     args = parser.parse_args()
