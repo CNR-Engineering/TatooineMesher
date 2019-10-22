@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-mesher_and_interpolator.py
+mesh_and_interpolate.py
 
 Channel mesher and/or interpolator from cross-sections
 """
 #TODO: integrate "seuils?" (local correction of the bathymetry)
 from time import perf_counter
 
-from tatooinemesher.constraint_lines import ConstraintLine
+from tatooinemesher.constraint_line import ConstraintLine
 from tatooinemesher.mesh_constructor import MeshConstructor
-from tatooinemesher.sections import CrossSection, CrossSectionSequence
+from tatooinemesher.section import CrossSection, CrossSectionSequence
 from tatooinemesher.utils.arg_command_line import MyArgParse
 from tatooinemesher.utils import get_hydraulic_axis, logger, set_logger_level, TatooineException
 
 
-def mesher_and_interpolator(args):
+def mesh_and_interpolate(args):
     set_logger_level(args.verbose)
     t1 = perf_counter()
 
@@ -83,13 +83,13 @@ parser.infile_args.add_argument("--attr_cross_sections", help="attribute to iden
 #                          help="distance around groynes to modify nodes close to them "
 #                               "(should be less than lateral and longitudinal space step)")
 # Outputs
-parser.add_out_mesh_file()
+parser.add_out_mesh_file(is_optional=True)
 parser.outfile_args.add_argument("--outfile_nodes", help="output points set file with mesh nodes (*.shp, *.xyz)")
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
     try:
-        mesher_and_interpolator(args)
+        mesh_and_interpolate(args)
     except TatooineException as e:
         logger.critical(e.message)

@@ -2,13 +2,14 @@
 """
 densify_cross_sections.py
 
-Interpolate intermediate cross-sections
+Interpolate initial and intermediate cross-sections
+Multiple variables are supported if input cross-sections file is a shapefile with POINTZ type.
 """
 from time import perf_counter
 
-from tatooinemesher.constraint_lines import ConstraintLine
+from tatooinemesher.constraint_line import ConstraintLine
 from tatooinemesher.mesh_constructor import MeshConstructor
-from tatooinemesher.sections import CrossSectionSequence
+from tatooinemesher.section import CrossSectionSequence
 from tatooinemesher.utils.arg_command_line import MyArgParse
 from tatooinemesher.utils import get_hydraulic_axis, logger, set_logger_level, TatooineException
 
@@ -39,7 +40,7 @@ def densify_cross_sections(args):
             raise TatooineException("A 2D interpolation is only compatible with 2 constraint lines!")
         section_seq.find_and_add_limits(constraint_lines, args.dist_max)
 
-    #section_seq.export_sections_shp('profils_travers_export_profil.shp')
+    #section_seq.export_sections_shp('export_cross-sections.shp')
 
     mesh_constr = MeshConstructor(section_seq=section_seq, lat_step=args.lat_step,
                                   nb_pts_lat=args.nb_pts_lat, interp_values=args.interp_values)

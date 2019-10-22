@@ -41,10 +41,9 @@ class MyArgParse(argparse.ArgumentParser):
 
     def add_common_args(self, project_straight_line=False, constant_long_disc=False):
         self.add_argument("--dist_max", type=float, default=0.01,
-                          help="distance de recherche maxi des 'intersections fictifs' "
-                               "pour les limites de lits (en m)")
+                          help="maximum search distance to rescue intersections for limits (in m)")
 
-        self.infile_args = self.add_argument_group("Input files")
+        self.infile_args = self.add_argument_group("Input files arguments")
 
         self.mesher_args = self.add_argument_group("Mesher and interpolator arguments")
         if project_straight_line:
@@ -70,7 +69,9 @@ class MyArgParse(argparse.ArgumentParser):
 
         self.outfile_args = self.add_argument_group("Output files arguments")
 
-    def add_out_mesh_file(self):
-        self.outfile_args.add_argument("outfile_mesh", help="Telemac results file")
+    def add_out_mesh_file(self, is_optional=False):
+        self.outfile_args.add_argument("--outfile_mesh" if is_optional else "outfile_mesh",
+                                       help="2D results file. Supports formats: Telemac (*.slf), "
+                                            "BlueKenue (*.t3s) and LandXML (*.xml)")
         self.outfile_args.add_argument("--lang", help="language for standard variables in output file",
                                        default='fr', choices=['en', 'fr'])

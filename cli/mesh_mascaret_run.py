@@ -14,9 +14,9 @@ from crue10.utils import CrueError
 from mascaret.mascaret_file import MascaretFile
 from mascaret.mascaretgeo_file import MascaretGeoFile
 
-from tatooinemesher.constraint_lines import ConstraintLine
+from tatooinemesher.constraint_line import ConstraintLine
 from tatooinemesher.mesh_constructor import MeshConstructor
-from tatooinemesher.sections import CrossSection, CrossSectionSequence
+from tatooinemesher.section import CrossSection, CrossSectionSequence
 from tatooinemesher.utils.arg_command_line import MyArgParse
 from tatooinemesher.utils import logger, set_logger_level, TatooineException
 

@@ -19,7 +19,7 @@ class CrossSection:
 
     ### Attributes
     - id <integer|str>: unique identifier
-    - label <str>: type of section (`Cross-section` ou `Transverse constraint line`)
+    - label <str>: type of section (`Cross-section` or `Transverse constraint line`)
     - coord <Coord>: coordinates (X and Y) with all variables
     - nb_points <int>: number of points
     - geom <shapely.geometry.LineString>: 2D geometry
@@ -48,7 +48,7 @@ class CrossSection:
         Limits are not set at the object instantiation
 
         @param id <integer|str>: unique identifier
-        @label <str>: type of section (`Cross-section` ou `Transverse constraint line`)
+        @label <str>: type of section (`Cross-section` or `Transverse constraint line`)
         @param coords <[tuple]>: sequence of X and Y coordinates
         """
         self.id = id
@@ -145,7 +145,7 @@ class CrossSection:
 
         # Check that Xt are increasing from bed1_id to bed2_id
         if Xt1 > Xt2:
-            raise TatooineException("L'ordre des lits ({}, {}) n'est pas par Xt croissant pour le {}".format(
+            raise TatooineException("Order of beds {} and {} leads to decreasing Xt values for {}".format(
                 bed1_id, bed2_id, self))
 
         Xt_section = self.coord.array['Xt']
@@ -272,17 +272,17 @@ class Bed(Coord):
     - coord
 
     ### Methods
-    - interp_along_lit_auto
-    - interp_coord_along_lit
+    - interp_coord_along_bed_auto
+    - interp_coord_along_bed
     - interp_coord_linear
     """
-    def interp_coord_along_lit_auto(self, lat_step, nb_pts_lat=None):
+    def interp_coord_along_bed_auto(self, lat_step, nb_pts_lat=None):
         if nb_pts_lat is None:
             nb_pts_lat = math.ceil((self.array['Xt'][-1] - self.array['Xt'][0])/lat_step) + 1
         Xt_adm_list = np.linspace(0., 1., num=nb_pts_lat)
-        return self.interp_coord_along_lit(Xt_adm_list)
+        return self.interp_coord_along_bed(Xt_adm_list)
 
-    def interp_coord_along_lit(self, Xt_adm_list):
+    def interp_coord_along_bed(self, Xt_adm_list):
         """
         @brief: Interpolate coordinates along bed at requested dimensionless curvilinear distances
         @param Xt_adm_list <1D-array float>: dimensionless distances (ranging from 0 and 1)
@@ -303,14 +303,14 @@ class Bed(Coord):
         """
         Xt_adm_list = np.linspace(0., 1., num=nb_pts_lat)
 
-        array_1 = self.interp_coord_along_lit(Xt_adm_list)
-        array_2 = other.interp_coord_along_lit(Xt_adm_list)
+        array_1 = self.interp_coord_along_bed(Xt_adm_list)
+        array_2 = other.interp_coord_along_bed(Xt_adm_list)
 
-        array = np.empty(nb_pts_lat, dtype=float_vars(Coord.XY + ['xt', 'Xt_amont', 'Xt_aval']))
+        array = np.empty(nb_pts_lat, dtype=float_vars(Coord.XY + ['xt', 'Xt_upstream', 'Xt_downstream']))
         for var in Coord.XY:
             array[var] = (1 - coeff)*array_1[var] + coeff*array_2[var]
-        array['Xt_amont'] = array_1['Xt']
-        array['Xt_aval'] = array_2['Xt']
+        array['Xt_upstream'] = array_1['Xt']
+        array['Xt_downstream'] = array_2['Xt']
         return array
 
 
@@ -445,12 +445,12 @@ class CrossSectionSequence:
                 logger.warn("- between '{}' and '{}'".format(self[i], self[j]))
 
     def compute_dist_proj_axe(self, axe_geom, dist_max):
-        """ TODO: translate
-        @brief: Calculer la distance projetée sur l'axe
-        @param axe_geom <shapely.geometry.LineString>: axe hydraulique (/!\ Orientation de l'axe)
-        @param dist_max <float>: distance de tolérance pour détecter des intersections
         """
-        logger.info("~> Calcul des abscisses sur l'axe hydraulique (pour ordonner les profils/épis)")
+        @brief: Compute distance along hydraulic axis
+        @param axe_geom <shapely.geometry.LineString>: hydraulic axis (/!\ Beware of its orientation)
+        @param dist_max <float>: maximum search distance to rescue intersections for limits
+        """
+        logger.info("~> Compute distances along hydraulic axis to order cross-sections")
         to_keep_list = []
         for section in self:
             section_geom = section.geom
@@ -459,8 +459,8 @@ class CrossSectionSequence:
                 if isinstance(intersection, Point):
                     section.dist_proj_axe = axe_geom.project(intersection)
                 else:
-                    raise TatooineException("L'intersection entre le '{}' et l'axe hydraulique "
-                                            "n'est pas un point unique".format(section))
+                    raise TatooineException("Intersection between '{}' and the hydraulic axis "
+                                            "is not a unique point".format(section))
             else:
                 if dist_max is not None:
                     for pos in (0, -1):

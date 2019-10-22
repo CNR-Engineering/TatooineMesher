@@ -13,7 +13,7 @@ from shapely.geometry import Point
 import time
 import triangle
 
-from tatooinemesher.sections import Bed
+from tatooinemesher.section import Bed
 from tatooinemesher.utils import float_vars, logger, TatooineException
 
 
@@ -31,7 +31,7 @@ class MeshConstructor:
     - nb_pts_lat <int>: nombre de noeuds transversalement
     - interp_values <str>: interpolation method
     - nb_var <int>: number of variables
-    - points: structured array with columns ['X', 'Y', 'Xt_amont', 'Xt_aval', 'Xl', 'xl', 'zone', 'lit']
+    - points: structured array with columns ['X', 'Y', 'Xt_upstream', 'Xt_downstream', 'Xl', 'xl', 'zone', 'bed']
     - i_pt <int>: curseur pour repérer l'avancement
     - segments <2D-array int>: list of nodes numbers (0-indexed) to define constrainted segments
     - triangle <dict>: dictionary with 2 keys `vertices` (2D nodes) and `triangles` (connectivity table)
@@ -55,8 +55,8 @@ class MeshConstructor:
     - interp_values_from_geom
     - get_merge_triangulation
     """
-    POINTS_DTYPE = float_vars(['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval', 'Xl', 'xl']) + \
-                              [(var, np.int) for var in ('zone', 'lit')]
+    POINTS_DTYPE = float_vars(['X', 'Y', 'xt', 'Xt_upstream', 'Xt_downstream', 'Xl', 'xl']) + \
+                              [(var, np.int) for var in ('zone', 'bed')]
     POINTS_FP_DTYPE = float_vars(['X', 'Y', 'Z'])
 
     def __init__(self, section_seq=[], lat_step=None, nb_pts_lat=None, interp_values='LINEAR'):
@@ -93,22 +93,22 @@ class MeshConstructor:
     def var_names(self):
         return list(self.section_seq[0].coord.values.dtype.names)
 
-    def add_points(self, coord, index_zone, xl, index_lit):
+    def add_points(self, coord, zone_index, xl, bed_index):
         """!
         @brief: Add vertices/nodes
-        @param coord <2D-array float>: table with columns 'X', 'Y', 'Xt_amont' and 'Xt_aval'
+        @param coord <2D-array float>: table with columns 'X', 'Y', 'Xt_upstream' and 'Xt_downstream'
         """
         if self.casiers_nodes_idx:
             raise TatooineException("Impossible to add points in river bed after having considered the floodplain")
 
         new_coord = np.empty(len(coord), dtype=self.points.dtype)
         # FIXME: avoid copying in using np.lib.recfunctions.append_fields?
-        for var in ['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']:  # copy existing columns
+        for var in ['X', 'Y', 'xt', 'Xt_upstream', 'Xt_downstream']:  # copy existing columns
             new_coord[var] = coord[var]
-        new_coord['zone'] = index_zone
-        new_coord['lit'] = index_lit
-        new_coord['Xl'] = self.section_seq[index_zone].dist_proj_axe * (1 - xl) + \
-                          self.section_seq[index_zone + 1].dist_proj_axe * xl
+        new_coord['zone'] = zone_index
+        new_coord['bed'] = bed_index
+        new_coord['Xl'] = self.section_seq[zone_index].dist_proj_axe * (1 - xl) + \
+                          self.section_seq[zone_index + 1].dist_proj_axe * xl
         new_coord['xl'] = xl
         self.i_pt += len(new_coord)
         self.points = np.hstack((self.points, new_coord))
@@ -118,24 +118,28 @@ class MeshConstructor:
         pos_end = pos_start + len(points)
         self.nodes_fp = np.hstack((self.nodes_fp, points))
         self.casiers_nodes_idx.append((pos_start, pos_end))
-        self.append_triangulation(triangulation)
+        self._append_triangulation(triangulation)
 
-    def add_segments(self, seg):
+    def add_segments(self, segments):
         """!
-        @brief: Ajouter des segments à contraintre
-        @param seg <2D-array int>: série de couples de sommets
+        @brief: Add segments to force from an array of node indexes
+        @param segments <2D-array int>: array with node indexes
         """
-        self.segments = np.vstack((self.segments, seg))
+        self.segments = np.vstack((self.segments, segments))
 
     def add_segments_from_node_list(self, node_list):
         """
-        @brief: Ajoute les sommets à partir d'une liste de noeuds successifs
-        @param node_list <1D-array int>: série de noeuds
+        @brief: Add segments to force from an list of consecutive node indexes
+        @param node_list <1D-array int>: list of node indexes
         """
         new_segments = np.column_stack((node_list[:-1], node_list[1:]))
         self.add_segments(new_segments)
 
-    def append_triangulation(self, triangulation):
+    def _append_triangulation(self, triangulation):
+        """
+        @brief: Add a submesh from a triangulation
+        @param triangulation <dict>: dictionary with `triangles` and `vertices` keys
+        """
         if not self.triangle:
             self.triangle['triangles'] = triangulation['triangles']
             self.triangle['vertices'] = triangulation['vertices']
@@ -163,27 +167,26 @@ class MeshConstructor:
             points['zone'] += last_zone + 2
         self.points = np.hstack((self.points, points))
 
-        self.append_triangulation(mesh_constr.triangle)
+        self._append_triangulation(mesh_constr.triangle)
 
     def export_triangulation_dict(self):
         """
-        @brief: Export triangulation with vertices in geometric coordinates
+        @brief: Export triangulation with nodes in geometric coordinates
         """
         return {'vertices': np.array(np.column_stack((self.points['X'], self.points['Y']))),
                 'segments': self.segments}
 
     def export_floworiented_triangulation_dict(self):
         """
-        @brief: Export triangulation with vertices in flow-oriented coordinates
+        @brief: Export triangulation with nodes in flow-oriented coordinates
         """
-        u = self.points['Xt_amont'] * (1 - self.points['xl']) + self.points['Xt_aval'] * self.points['xl']
+        u = self.points['Xt_upstream'] * (1 - self.points['xl']) + self.points['Xt_downstream'] * self.points['xl']
         v = self.points['Xl']
         return {'vertices': np.array(np.column_stack((u, v))),
                 'segments': self.segments}
 
     def build_initial_profiles(self):
-        logger.info("~> Interpolation sur les profils existants en prenant en compte "
-                    "le passage des lignes de contraintes")  #TOTRANSLATE
+        logger.info("~> Interpolate initial cross-sections taking into account limits")
         for i in range(len(self.section_seq)):
             curr_profile = self.section_seq[i]
             logger.debug(curr_profile)
@@ -205,8 +208,8 @@ class MeshConstructor:
 
             first_bed = True
             for j, (id1, id2) in enumerate(zip(limits_id, limits_id[1:])):
-                lit = curr_profile.extract_bed(id1, id2)
-                coord_int = lit.interp_coord_along_lit_auto(self.lat_step, self.nb_pts_lat)
+                bed = curr_profile.extract_bed(id1, id2)
+                coord_int = bed.interp_coord_along_bed_auto(self.lat_step, self.nb_pts_lat)
 
                 if first_bed:
                     curr_profile.get_limit_by_id(id1)['id_pt'] = self.i_pt + 1
@@ -214,17 +217,17 @@ class MeshConstructor:
                     coord_int = coord_int[1:]
 
                 if i == 0:
-                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_amont'})
-                    coord_int = append_fields(coord_int, 'Xt_aval', np.zeros(len(coord_int)), usemask=False)
+                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_upstream'})
+                    coord_int = append_fields(coord_int, 'Xt_downstream', np.zeros(len(coord_int)), usemask=False)
                     self.add_points(coord_int, i, 0.0, j)
                 else:
-                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_aval'})
-                    coord_int = append_fields(coord_int, 'Xt_amont', np.zeros(len(coord_int)), usemask=False)
+                    coord_int = rename_fields(coord_int, {'Xt': 'Xt_downstream'})
+                    coord_int = append_fields(coord_int, 'Xt_upstream', np.zeros(len(coord_int)), usemask=False)
                     self.add_points(coord_int, i - 1, 1.0, j)
 
                 curr_profile.get_limit_by_id(id2)['id_pt'] = self.i_pt
 
-                # Ajoute les nouveaux segments
+                # Add new segments
                 new_i_pt = np.arange(curr_profile.get_limit_by_id(id1)['id_pt'],
                                      curr_profile.get_limit_by_id(id2)['id_pt'] + 1)
                 self.add_segments_from_node_list(new_i_pt)
@@ -232,70 +235,69 @@ class MeshConstructor:
                 if first_bed:
                     first_bed = False
 
-    def build_interp(self, lignes_contraintes, long_step, constant_long_disc):
+    def build_interp(self, constraint_lines, long_step, constant_long_disc):
         """
         Build interpolation, add points and segments
 
-        @param lignes_contraintes <[ConstraintLine]>: lignes de contrainte
-        @param long_step <float>
+        @param constraint_lines <[ConstraintLine]>: list of constraint lines
+        @param long_step <float>: longitudinal space step
         @param constant_long_disc <bool>
         """
+        nb_pts_inter = 0
         self.build_initial_profiles()
 
-        ### BOUCLE SUR L'ESPACE INTER-PROFIL
-        logger.info("~> Construction du maillage par zone interprofils puis par lit")
+        # LOOP ON ZONES (between 2 consecutive cross-sections)
+        logger.info("~> Building mesh per zone and then per bed")
 
-        for i, (prev_profil, next_profil) in enumerate(zip(self.section_seq, self.section_seq[1:])):
-            logger.debug("> Zone n°{} : entre {} et {}".format(i, prev_profil, next_profil))
+        for i, (prev_section, next_section) in enumerate(zip(self.section_seq, self.section_seq[1:])):
+            logger.debug("> Zone n°{} : between {} and {}".format(i, prev_section, next_section))
 
             if constant_long_disc:
-                nb_pts_inter = prev_profil.compute_nb_pts_inter(next_profil, long_step)
+                nb_pts_inter = prev_section.compute_nb_pts_inter(next_section, long_step)
                 Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
             # Looking for common limits between cross-sections
-            common_limits_id = prev_profil.common_limits(next_profil.limits.keys())
+            common_limits_id = prev_section.common_limits(next_section.limits.keys())
             logger.debug("Common limits: {}".format(list(common_limits_id)))
 
             if len(common_limits_id) < 2:
                 raise TatooineException("No interpolation in the interval %i, between %s and %s (%i common limits)"
-                                        % (i, prev_profil, next_profil, len(common_limits_id)))
+                                        % (i, prev_section, next_section, len(common_limits_id)))
 
             else:
-                first_lit = True
-                ### LOOP ON BEDS
+                first_bed = True
+                # LOOP ON BEDS
                 for j, (id1, id2) in enumerate(zip(common_limits_id, common_limits_id[1:])):
                     pt_list_L1 = []
                     pt_list_L2 = []
 
                     logger.debug("Bed {}-{}".format(id1, id2))
 
-                    # Extraction d'une partie des profils
-                    lit_1 = prev_profil.extract_bed(id1, id2)
-                    lit_2 = next_profil.extract_bed(id1, id2)
+                    # Extraction of cross-section portions (= beds)
+                    bed_1 = prev_section.extract_bed(id1, id2)
+                    bed_2 = next_section.extract_bed(id1, id2)
 
-                    # Abscisses curvilignes le long de la ligne de contrainte
-                    (Xp_profil1_L1, Xp_profil1_L2) = prev_profil.get_Xt_lines(id1, id2)
-                    (Xp_profil2_L1, Xp_profil2_L2) = next_profil.get_Xt_lines(id1, id2)
+                    # Curvilinear abscissa along constraint lines
+                    (Xp_profil1_L1, Xp_profil1_L2) = prev_section.get_Xt_lines(id1, id2)
+                    (Xp_profil2_L1, Xp_profil2_L2) = next_section.get_Xt_lines(id1, id2)
                     dXp_L1 = Xp_profil2_L1 - Xp_profil1_L1
                     dXp_L2 = Xp_profil2_L2 - Xp_profil1_L2
 
                     if dXp_L1 < 0:
-                        raise TatooineException("La ligne {} n'est pas orientée dans le même ordre que les profils"
-                                                .format(id1))
+                        raise TatooineException("The constraint line {} is not oriented correctly".format(id1))
                     if dXp_L2 < 0:
-                        raise TatooineException("La ligne {} n'est pas orientée dans le même ordre que les profils"
-                                                .format(id2))
+                        raise TatooineException("The constraint line {} is not oriented correctly".format(id2))
 
                     if not constant_long_disc:
                         nb_pts_inter = math.ceil(min(dXp_L1, dXp_L2)/long_step) - 1
                         Xp_adm_list = np.linspace(0.0, 1.0, num=nb_pts_inter + 2)[1:-1]
 
-                    L1_coord_int = lignes_contraintes[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1,
-                                                                                     Xp_adm_list)
-                    L2_coord_int = lignes_contraintes[id2].coord_sampling_along_line(Xp_profil1_L2, Xp_profil2_L2,
-                                                                                     Xp_adm_list)
+                    L1_coord_int = constraint_lines[id1].coord_sampling_along_line(Xp_profil1_L1, Xp_profil2_L1,
+                                                                                   Xp_adm_list)
+                    L2_coord_int = constraint_lines[id2].coord_sampling_along_line(Xp_profil1_L2, Xp_profil2_L2,
+                                                                                   Xp_adm_list)
 
-                    ### BOUCLE SUR LES LIGNES
+                    # LOOP ON INTERMEDIATE CROSS-SECTIONS
                     for k in range(nb_pts_inter):
                         Xp = Xp_adm_list[k]
                         P1 = Point(tuple(L1_coord_int[k]))
@@ -305,35 +307,35 @@ class MeshConstructor:
                             nb_pts_lat = math.ceil(P1.distance(P2) / self.lat_step) + 1
                         else:
                             nb_pts_lat = self.nb_pts_lat
-                        array = lit_1.interp_coord_linear(lit_2, Xp, nb_pts_lat)
-                        lit_int = Bed(array, ['Xt', 'xt'])
-                        lit_int.move_between_targets(P1, P2)
-                        coord_int = lit_int.array[['X', 'Y', 'xt', 'Xt_amont', 'Xt_aval']]  # Ignore `Xt`
+                        array = bed_1.interp_coord_linear(bed_2, Xp, nb_pts_lat)
+                        bed_int = Bed(array, ['Xt', 'xt'])
+                        bed_int.move_between_targets(P1, P2)
+                        coord_int = bed_int.array[['X', 'Y', 'xt', 'Xt_upstream', 'Xt_downstream']]  # Ignore `Xt`
                         pt_list_L1.append(self.i_pt + 1)
 
-                        if not first_lit:
-                            # ignore le 1er point car la ligne de contrainte a déjà été traitée
+                        if not first_bed:
+                            # ignore first point because the constraint line was already considered
                             coord_int = coord_int[1:]
 
                         self.add_points(coord_int, i, Xp, j)
 
                         pt_list_L2.append(self.i_pt)
 
-                    pt_list_L2 = np.array([prev_profil.get_limit_by_id(id2)['id_pt']] + pt_list_L2 +
-                                          [next_profil.get_limit_by_id(id2)['id_pt']])
+                    pt_list_L2 = np.array([prev_section.get_limit_by_id(id2)['id_pt']] + pt_list_L2 +
+                                          [next_section.get_limit_by_id(id2)['id_pt']])
                     self.add_segments_from_node_list(pt_list_L2)
 
-                    if first_lit:
-                        pt_list_L1 = np.array([prev_profil.get_limit_by_id(id1)['id_pt']] + pt_list_L1 +
-                                              [next_profil.get_limit_by_id(id1)['id_pt']])
+                    if first_bed:
+                        pt_list_L1 = np.array([prev_section.get_limit_by_id(id1)['id_pt']] + pt_list_L1 +
+                                              [next_section.get_limit_by_id(id1)['id_pt']])
                         self.add_segments_from_node_list(pt_list_L1)
-                        first_lit = False
+                        first_bed = False
 
     def corr_bathy_on_epis(self, epis, dist_corr_epi):
         raise NotImplementedError  #TODO
-        logger.info("~> Correction de la bathymétrie autour des épis")
+        logger.info("~> Correction bathymetry around 'épis'")
         if self.var_names() != ['Z']:
-            raise TatooineException("Impossible de corriger les épis sur les couches sédimentaires")
+            raise TatooineException("Impossible to correct elevation of 'épis' for the sediment layers")
         for epi in epis:
             epi_geom = epi.coord.convert_as_linestring()
             for i, coord in enumerate(self.points):
@@ -400,16 +402,16 @@ class MeshConstructor:
             z_array = self.interp_values_from_geom()[0, :]
             with shapefile.Writer(path, shapeType=shapefile.POINT) as w:
                 w.field('zone', 'N', decimal=6)
-                w.field('lit', 'N', decimal=6)
-                w.field('Xt_amont', 'N', decimal=6)
-                w.field('Xt_aval', 'N', decimal=6)
+                w.field('bed', 'N', decimal=6)
+                w.field('Xt_upstream', 'N', decimal=6)
+                w.field('Xt_downstream', 'N', decimal=6)
                 w.field('xt', 'N', decimal=6)
                 w.field('xl', 'N', decimal=6)
                 w.field('Z', 'N', decimal=6)
                 for row, z in zip(self.points, z_array):
                     w.point(row['X'], row['Y'])
-                    w.record(**{'zone': float(row['zone']), 'lit': float(row['lit']),
-                                'Xt_amont': row['Xt_amont'], 'Xt_aval': row['Xt_aval'], 'xt': row['xt'],
+                    w.record(**{'zone': float(row['zone']), 'bed': float(row['bed']),
+                                'Xt_upstream': row['Xt_upstream'], 'Xt_downstream': row['Xt_downstream'], 'xt': row['xt'],
                                 'xl': row['xl'], 'Z': z})
 
         else:
@@ -565,8 +567,8 @@ class MeshConstructor:
             section_ds = self.section_seq[i_zone + 1]
             xt_us = section_us.coord.array['Xt']
             xt_ds = section_ds.coord.array['Xt']
-            xt_us_target = self.points['Xt_amont'][filter_points]
-            xt_ds_target = self.points['Xt_aval'][filter_points]
+            xt_us_target = self.points['Xt_upstream'][filter_points]
+            xt_ds_target = self.points['Xt_downstream'][filter_points]
 
             for i, var in enumerate(self.var_names()):
                 values_us = section_us.coord.values[var]
