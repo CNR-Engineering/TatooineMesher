@@ -279,7 +279,7 @@ def mesh_crue10_run(args):
 parser = MyArgParse(description=__doc__)
 parser.add_common_args(project_straight_line=False, constant_long_disc=True)
 # Inputs
-parser.infile_args.title = "Crue10 input model and run (and the optional DEM)"
+parser.infile_args.title = "~> Crue10 input model and run (and the optional DEM)"
 parser.infile_args.add_argument("infile_etu", help="Crue10 study file (*.etu.xml)")
 parser.infile_args.add_argument("model_name", help="model name")
 parser.infile_args.add_argument("--infile_rcal", help="Crue10 results file (*.rcal.xml)")
