@@ -296,6 +296,8 @@ parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
 # Mesh parameters
 parser.mesher_args.add_argument("--floodplain_step", type=float, default=None,
                                 help="floodplain space step (in m)")
+# Outputs
+parser.add_out_mesh_file()
 
 
 if __name__ == '__main__':

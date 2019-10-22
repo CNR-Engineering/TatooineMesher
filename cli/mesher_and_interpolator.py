@@ -60,7 +60,7 @@ def mesher_and_interpolator(args):
 
     if args.outfile_mesh is not None:
         mesh_constr.build_mesh()
-        mesh_constr.export_mesh(args.outfile_mesh)
+        mesh_constr.export_mesh(args.outfile_mesh, lang=args.lang)
 
     t2 = perf_counter()
     logger.info("=> Execution time: {}s".format(t2-t1))
@@ -83,11 +83,8 @@ parser.infile_args.add_argument("--attr_cross_sections", help="attribute to iden
 #                          help="distance around groynes to modify nodes close to them "
 #                               "(should be less than lateral and longitudinal space step)")
 # Outputs
-parser_outfiles = parser.add_argument_group('Output files')
-parser_outfiles.add_argument("--outfile_mesh",
-                             help="output mesh file. Supported formats: slf (Telemac), t3s (BlueKenue), "
-                                  "and xml (LandXML for GIS)")
-parser_outfiles.add_argument("--outfile_nodes", help="output points set file with mesh nodes (*.shp, *.xyz)")
+parser.add_out_mesh_file()
+parser.outfile_args.add_argument("--outfile_nodes", help="output points set file with mesh nodes (*.shp, *.xyz)")
 
 
 if __name__ == '__main__':

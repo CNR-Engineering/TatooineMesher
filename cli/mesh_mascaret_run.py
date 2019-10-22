@@ -141,6 +141,9 @@ parser.add_common_args(constant_long_disc=True)
 parser.infile_args.title = "~> Input Mascaret files arguments"
 parser.infile_args.add_argument("infile_geo", help="Mascaret geometry file (*.georef, *.georefC)")
 parser.infile_args.add_argument("--infile_res", help="Mascaret results file (*.opt, *.rub)")
+# Outputs
+parser.add_out_mesh_file()
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
