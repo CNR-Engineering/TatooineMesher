@@ -40,7 +40,7 @@ with open(os.path.join(FOLDER_DOC, '_Sidebar.md'), 'w') as out_sidebar:
             script = CommandLineScript(file_path)
 
             # Write a markdown file (to be integrated within github wiki)
-            with open(os.path.join(FOLDER_DOC, script_name + '.py.md'), 'w') as fileout:
+            with open(os.path.join(FOLDER_DOC, script_name + '.py.md'), 'w', encoding='utf-8') as fileout:
                 fileout.write('```\n')
                 fileout.write(script.help_msg())
                 fileout.write('```\n')
