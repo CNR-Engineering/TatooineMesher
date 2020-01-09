@@ -26,8 +26,8 @@ import triangle
 
 from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
+from crue10.etude import Etude
 from crue10.results import RunResults
-from crue10.study import Study
 from crue10.utils import CrueError
 
 from tatooinemesher.constraint_line import ConstraintLine
@@ -46,21 +46,21 @@ def mesh_crue10_run(args):
     t1 = perf_counter()
 
     # Read the model and its submodels from xml/shp files
-    study = Study(args.infile_etu)
-    model = study.get_model(args.model_name)
-    model.read_all()
-    logger.info(model)
-    for submodel in model.submodels:
-        submodel.remove_sectioninterpolee()
-        submodel.normalize_geometry()
-        logger.info(submodel.summary())
-        # submodel.write_shp_limites_lits_numerotes('limites_lits.shp')  # DEBUG
-    logger.info(model)
+    etude = Etude(args.infile_etu)
+    modele = etude.get_modele(args.model_name)
+    modele.read_all()
+    logger.info(modele)
+    for sous_modele in modele.liste_sous_modeles:
+        sous_modele.remove_sectioninterpolee()
+        sous_modele.normalize_geometry()
+        logger.info(sous_modele.summary())
+        # sous_modele.write_shp_limites_lits_numerotes('limites_lits.shp')  # DEBUG
+    logger.info(modele)
 
     global_mesh_constr = MeshConstructor()
 
     # Handle branches in minor bed
-    for i, branche in enumerate(model.get_branche_list()):
+    for i, branche in enumerate(modele.get_liste_branches()):
         # Ignore branch if branch_patterns is set and do not match with current branch name
         if args.branch_patterns is not None:
             ignore = True
@@ -79,7 +79,7 @@ def mesh_crue10_run(args):
             axe = branche.geom
             try:
                 section_seq = CrossSectionSequence()
-                for crue_section in branche.sections:
+                for crue_section in branche.liste_sections_dans_branche:
                     if isinstance(crue_section, SectionProfil):
                         coords = list(crue_section.get_coord(add_z=True))
                         section = CrossSection(crue_section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
@@ -117,7 +117,7 @@ def mesh_crue10_run(args):
             logger.info("\n")
 
     # Handle casiers in floodplain
-    nb_casiers = len(model.get_casier_list())
+    nb_casiers = len(modele.get_liste_casiers())
     if args.infile_dem and nb_casiers > 0:
         logger.info("===== TRAITEMENT DES CASIERS =====")
 
@@ -131,7 +131,7 @@ def mesh_crue10_run(args):
         max_elem_area = floodplain_step * floodplain_step / 2.0
         simplify_dist = floodplain_step / 2.0
 
-        for i, casier in enumerate(model.get_casier_list()):
+        for i, casier in enumerate(modele.get_liste_casiers()):
             if casier.geom is None:
                 raise TatooineException("Geometry of %s could not be found" % casier)
             line = casier.geom.simplify(simplify_dist)
@@ -166,7 +166,7 @@ def mesh_crue10_run(args):
         logger.info(results.summary())
 
         # Check result consistency
-        missing_sections = model.get_missing_active_sections(results.emh['Section'])
+        missing_sections = modele.get_missing_active_sections(results.emh['Section'])
         if missing_sections:
             raise CrueError("Sections manquantes :\n%s" % missing_sections)
 
@@ -187,7 +187,7 @@ def mesh_crue10_run(args):
 
         pos_variables = [results.variables['Section'].index(var) for var in varnames_1d]
         pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
-        pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in model.get_casier_list()]
+        pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in modele.get_liste_casiers()]
 
         additional_variables_id = ['H']
         if 'Vact' in varnames_1d:
