@@ -28,7 +28,7 @@ from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
 from crue10.etude import Etude
 from crue10.results import RunResults
-from crue10.utils import CrueError
+from crue10.utils import ExceptionCrue10
 
 from tatooinemesher.constraint_line import ConstraintLine
 from tatooinemesher.mesh_constructor import MeshConstructor
@@ -156,7 +156,7 @@ def mesh_crue10_run(args):
             global_mesh_constr.add_floodplain_mesh(triangulation, points)
 
     if len(global_mesh_constr.points) == 0:
-        raise CrueError("Aucun point à traiter, adaptez l'option `--branch_patterns` et/ou `--branch_types_filter`")
+        raise ExceptionCrue10("Aucun point à traiter, adaptez l'option `--branch_patterns` et/ou `--branch_types_filter`")
 
     logger.info(global_mesh_constr.summary())  # General information about the merged mesh
 
@@ -168,7 +168,7 @@ def mesh_crue10_run(args):
         # Check result consistency
         missing_sections = modele.get_missing_active_sections(results.emh['Section'])
         if missing_sections:
-            raise CrueError("Sections manquantes :\n%s" % missing_sections)
+            raise ExceptionCrue10("Sections manquantes :\n%s" % missing_sections)
 
         # Subset results to get requested variables at active sections
         varnames_1d = results.variables['Section']
@@ -307,6 +307,6 @@ if __name__ == '__main__':
     except FileNotFoundError as e:
         logger.critical(e)
         sys.exit(1)
-    except CrueError as e:
+    except ExceptionCrue10 as e:
         logger.critical(e)
         sys.exit(2)

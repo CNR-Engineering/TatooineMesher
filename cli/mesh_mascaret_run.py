@@ -10,7 +10,7 @@ from pyteltools.slf import Serafin
 import sys
 from time import perf_counter
 
-from crue10.utils import CrueError
+from crue10.utils import ExceptionCrue10
 from mascaret.mascaret_file import MascaretFile
 from mascaret.mascaretgeo_file import MascaretGeoFile
 
@@ -76,7 +76,7 @@ def mesh_mascaret_run(args):
             logger.error("/!\\ Reach %s ignored because it does not contain at least 2 sections" % reach_id)
 
     if len(global_mesh_constr.points) == 0:
-        raise CrueError("No node in the generated mesh!")
+        raise ExceptionCrue10("No node in the generated mesh!")
 
     logger.info(global_mesh_constr.summary())  # General information about the merged mesh
 
@@ -152,6 +152,6 @@ if __name__ == '__main__':
     except FileNotFoundError as e:
         logger.critical(e)
         sys.exit(1)
-    except CrueError as e:
+    except ExceptionCrue10 as e:
         logger.critical(e)
         sys.exit(2)
