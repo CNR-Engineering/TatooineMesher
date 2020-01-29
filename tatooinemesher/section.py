@@ -55,6 +55,8 @@ class CrossSection:
         self.label = label
         self.coord = Coord(np.array(coord, dtype=float_vars(['X', 'Y'])), ['Xt', 'xt'])
         self.nb_points = len(self.coord.array)
+        if len(coord) < 2:
+            raise TatooineException("%s %s does not have at least 2 points!" % (label, id))
         self.geom = LineString(coord)  # FIXME: might contains duplicated points
 
         self.limits = OrderedDict()

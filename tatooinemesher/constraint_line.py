@@ -76,7 +76,7 @@ class ConstraintLine:
                     lines.append(ConstraintLine(i, list(line.polyline().coords), interp_coord))
 
             else:
-                raise NotImplementedError("Only shp and i3s formats are supported for constraint lines")
+                raise NotImplementedError("Only shp and i2s formats are supported for constraint lines")
 
         return lines
 
