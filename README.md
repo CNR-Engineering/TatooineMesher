@@ -1,6 +1,10 @@
 TatooineMesher
 ==============
 
+![Python package](https://github.com/CNR-Engineering/TatooineMesher/workflows/Python%20package/badge.svg)
+
+Tested versions: 3.6 and 3.7
+
 <img style="float: right" src="https://github.com/CNR-Engineering/TatooineMesher/raw/master/media/logo_tatooinemesher_256px.png" width="168px" />
 
 > Channel mesher and interpolator from 1D cross-sections and constraint lines
