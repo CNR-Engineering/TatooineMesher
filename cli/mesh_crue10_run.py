@@ -27,7 +27,7 @@ import triangle
 from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
 from crue10.etude import Etude
-from crue10.results import RunResults
+from crue10.run.results import RunResults
 from crue10.utils import ExceptionCrue10
 
 from tatooinemesher.constraint_line import ConstraintLine
