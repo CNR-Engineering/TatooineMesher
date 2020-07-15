@@ -367,33 +367,38 @@ class CrossSectionSequence:
                     section.coord.values = z_array
                     section_seq.add_section(section)
 
-            elif shp_type == shapefile.POINTZ:
+            elif shp_type in (shapefile.POINT, shapefile.POINTZ):
                 field_id_index = get_field_index(filename, field_id)
                 field_indexes, field_names = [], []
+                if shp_type == shapefile.POINTZ:
+                    field_names.append('Z')
                 for index, name in shp.get_numeric_attribute_names(filename):
                     if name.startswith('Z'):
                         field_indexes.append(index)
                         field_names.append(name)
                 coords, z_layers = [], []
                 last_point_id = None
-                for i, (point, attributes) in enumerate(shp.get_points(filename, with_z=True)):
+                for i, (point, attributes) in enumerate(shp.get_points(filename, with_z=shp_type == shapefile.POINTZ)):
                     point_id = attributes[field_id_index]  # FIXME: should raise exception if field_id_index is None!
                     if i > 0 and point_id != last_point_id:
-                        z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
+                        z_array = np.array(z_layers, dtype=float_vars(field_names))
                         section = CrossSection(last_point_id, coords, label)
                         section.coord.values = z_array
                         section_seq.add_section(section)
                         coords, z_layers = [], []
                     coords.append(point[:2])
-                    z_layers.append((point[2],) + tuple(attributes[index] for index in field_indexes))
+                    if shp_type == shapefile.POINTZ:
+                        z_layers.append((point[2],) + tuple(attributes[index] for index in field_indexes))
+                    else:
+                        z_layers.append(tuple(attributes[index] for index in field_indexes))
                     last_point_id = point_id
-                z_array = np.array(z_layers, dtype=float_vars(['Z'] + field_names))
+                z_array = np.array(z_layers, dtype=float_vars(field_names))
                 section = CrossSection(last_point_id, coords, label)
                 section.coord.values = z_array
                 section_seq.add_section(section)
 
             else:
-                raise TatooineException("The type of file %s is not POINTZ or POLYLINEZ[M]" % filename)
+                raise TatooineException("The type of file %s is not POINT[Z] or POLYLINEZ[M]" % filename)
 
         else:
             raise NotImplementedError("Only shp and i3s formats are supported for cross-sections")

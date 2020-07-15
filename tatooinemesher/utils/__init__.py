@@ -99,7 +99,7 @@ def get_field_index(filename, field_id):
         try:
             return names.index(field_id)
         except ValueError:
-            raise TatooineException("The field `%s` does not exist" % field_id)
+            raise TatooineException("The field `%s` does not exist (try among: %s)" % (field_id, names))
 
 
 def set_logger_level(set_to_debug):
