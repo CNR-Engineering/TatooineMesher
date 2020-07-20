@@ -187,7 +187,10 @@ def mesh_crue10_run(args):
 
         pos_variables = [results.variables['Section'].index(var) for var in varnames_1d]
         pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
-        pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in modele.get_liste_casiers()]
+        if global_mesh_constr.has_floodplain:
+            pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in modele.get_liste_casiers()]
+        else:
+            pos_casiers_list = []
 
         additional_variables_id = ['H']
         if 'Vact' in varnames_1d:
