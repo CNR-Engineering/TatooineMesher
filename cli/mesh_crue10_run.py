@@ -15,6 +15,8 @@ Les variables écrites dans le fichier de sortie sont :
 * Les variables supplémentaires si un résultat est lu sont :
     * HAUTEUR D'EAU (la variable 'Z' est nécessaire)
     * VITESSE SCALAIRE (seulement si la variable 'Vact' est présente)
+
+Seulement les branches et les casiers actifs sont traités.
 """
 import numpy as np
 from numpy.lib.recfunctions import unstructured_to_structured
@@ -132,28 +134,29 @@ def mesh_crue10_run(args):
         simplify_dist = floodplain_step / 2.0
 
         for i, casier in enumerate(modele.get_liste_casiers()):
-            if casier.geom is None:
-                raise TatooineException("Geometry of %s could not be found" % casier)
-            line = casier.geom.simplify(simplify_dist)
-            if not line.is_closed:
-                raise RuntimeError
-            coords = resample_2d_line(line.coords, floodplain_step)[1:]  # Ignore last duplicated node
+            if casier.is_active:
+                if casier.geom is None:
+                    raise TatooineException("Geometry of %s could not be found" % casier)
+                line = casier.geom.simplify(simplify_dist)
+                if not line.is_closed:
+                    raise RuntimeError
+                coords = resample_2d_line(line.coords, floodplain_step)[1:]  # Ignore last duplicated node
 
-            hard_nodes_xy = np.array(coords, dtype=np.float)
-            hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=np.int)
-            hard_segments = np.column_stack((hard_nodes_idx, np.roll(hard_nodes_idx, 1)))
+                hard_nodes_xy = np.array(coords, dtype=np.float)
+                hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=np.int)
+                hard_segments = np.column_stack((hard_nodes_idx, np.roll(hard_nodes_idx, 1)))
 
-            tri = {
-                'vertices': np.array(np.column_stack((hard_nodes_xy[:, 0], hard_nodes_xy[:, 1]))),
-                'segments': hard_segments,
-            }
-            triangulation = triangle.triangulate(tri, opts='qpa%f' % max_elem_area)
+                tri = {
+                    'vertices': np.array(np.column_stack((hard_nodes_xy[:, 0], hard_nodes_xy[:, 1]))),
+                    'segments': hard_segments,
+                }
+                triangulation = triangle.triangulate(tri, opts='qpa%f' % max_elem_area)
 
-            nodes_xy = np.array(triangulation['vertices'], dtype=np.float)
-            bottom = dem_interp(nodes_xy)
-            points = unstructured_to_structured(np.column_stack((nodes_xy, bottom)), names=['X', 'Y', 'Z'])
+                nodes_xy = np.array(triangulation['vertices'], dtype=np.float)
+                bottom = dem_interp(nodes_xy)
+                points = unstructured_to_structured(np.column_stack((nodes_xy, bottom)), names=['X', 'Y', 'Z'])
 
-            global_mesh_constr.add_floodplain_mesh(triangulation, points)
+                global_mesh_constr.add_floodplain_mesh(triangulation, points)
 
     if len(global_mesh_constr.points) == 0:
         raise ExceptionCrue10("Aucun point à traiter, adaptez l'option `--branch_patterns` et/ou `--branch_types_filter`")
@@ -188,7 +191,8 @@ def mesh_crue10_run(args):
         pos_variables = [results.variables['Section'].index(var) for var in varnames_1d]
         pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
         if global_mesh_constr.has_floodplain:
-            pos_casiers_list = [results.emh['Casier'].index(casier.id) for casier in modele.get_liste_casiers()]
+            pos_casiers_list = [results.emh['Casier'].index(casier.id)
+                                for casier in modele.get_liste_casiers() if casier.is_active]
         else:
             pos_casiers_list = []
 
@@ -292,7 +296,7 @@ parser.infile_args.add_argument("--infile_dem", help='Raster file (geoTIFF forma
                                                      'the "casiers" in the floodplain (*.tif)')
 # Parameters to select branches
 parser_branches = parser.add_argument_group("Parameters to filter branches")
-parser_branches.add_argument("--branch_types_filter", nargs='+', default=Branche.TYPES_IN_MINOR_BED,
+parser_branches.add_argument("--branch_types_filter", type=int, nargs='+', default=Branche.TYPES_IN_MINOR_BED,
                              help="types of branches to consider")
 parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
                              help="list of patterns to filter branches which name does not contain any pattern")
