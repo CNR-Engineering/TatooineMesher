@@ -13,7 +13,8 @@ Les variables écrites dans le fichier de sortie sont :
 * IS LIT ACTIVE (0 = lit inactif, 1 = lit actif)
 * FROTTEMENT (moyenne sur la verticale si plusieurs valeurs)
 * Les variables supplémentaires si un résultat est lu sont :
-    * HAUTEUR D'EAU (la variable 'Z' est nécessaire)
+    * HAUTEUR D'EAU (la variable 'Z' aux sections/casiers est nécessaire.
+        Attention, il ne faut pas avoir sorti la charge 'H' aux sections)
     * VITESSE SCALAIRE (seulement si la variable 'Vact' est présente)
 
 Seulement les branches et les casiers actifs sont traités.
@@ -196,6 +197,9 @@ def mesh_crue10_run(args):
         else:
             pos_casiers_list = []
 
+        if 'H' in varnames_1d:
+            raise TatooineException("La variable H (charge) de Crue10 entre en conflit avec celle de TatooineMesher. "
+                                    "Veuillez supprimer cette variable et relancer le traitement")
         additional_variables_id = ['H']
         if 'Vact' in varnames_1d:
             additional_variables_id.append('M')
