@@ -172,7 +172,8 @@ def mesh_crue10_run(args):
         # Check result consistency
         missing_sections = modele.get_missing_active_sections(results.emh['Section'])
         if missing_sections:
-            raise ExceptionCrue10("Sections manquantes :\n%s" % missing_sections)
+            raise ExceptionCrue10("Sections actives dans le scénario mais manquantes dans le Run :\n%s"
+                                  % missing_sections)
 
         # Subset results to get requested variables at active sections
         varnames_1d = results.variables['Section']
