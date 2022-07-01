@@ -6,5 +6,5 @@ pyshp>=2.0
 scipy
 shapely
 triangle
--e git://github.com/CNR-Engineering/Crue10_tools.git#egg=Crue10_tools
--e git://github.com/CNR-Engineering/PyTelTools.git#egg=PyTelTools
+-e git+https://github.com/CNR-Engineering/Crue10_tools.git#egg=Crue10_tools
+-e git+https://github.com/CNR-Engineering/PyTelTools.git#egg=PyTelTools
