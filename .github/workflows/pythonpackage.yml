@@ -23,8 +23,8 @@ jobs:
         sudo apt-get install libgdal-dev libspatialindex-dev
         sudo apt-get install gdal-bin libgdal-dev
         gdal-config --version
-        python -m pip install --global-option=build_ext --global-option="-I/usr/include/gdal" GDAL==`gdal-config --version`
         python -m pip install --upgrade pip
+        python -m pip install --global-option=build_ext --global-option="-I/usr/include/gdal" GDAL==`gdal-config --version`
         pip install -r requirements.txt
     - name: Lint with flake8
       run: |
