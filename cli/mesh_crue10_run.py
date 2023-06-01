@@ -30,7 +30,7 @@ import triangle
 from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
 from crue10.etude import Etude
-from crue10.run.results import RunResults
+from crue10.run.resultats_calcul import ResultatsCalcul
 from crue10.utils import ExceptionCrue10
 
 from tatooinemesher.constraint_line import ConstraintLine
@@ -166,17 +166,17 @@ def mesh_crue10_run(args):
 
     if args.infile_rcal:
         # Read rcal result file
-        results = RunResults(args.infile_rcal)
-        logger.info(results.summary())
+        resultats = ResultatsCalcul(args.infile_rcal)
+        logger.info(resultats.summary())
 
         # Check result consistency
-        missing_sections = modele.get_missing_active_sections(results.emh['Section'])
+        missing_sections = modele.get_missing_active_sections(resultats.emh['Section'])
         if missing_sections:
             raise ExceptionCrue10("Sections actives dans le scénario mais manquantes dans le Run :\n%s"
                                   % missing_sections)
 
         # Subset results to get requested variables at active sections
-        varnames_1d = results.variables['Section']
+        varnames_1d = resultats.variables['Section']
         logger.info("Variables 1D disponibles aux sections: %s" % varnames_1d)
         try:
             pos_z = varnames_1d.index('Z')
@@ -184,16 +184,16 @@ def mesh_crue10_run(args):
             raise TatooineException("La variable Z doit être présente dans les résultats aux sections")
         if global_mesh_constr.has_floodplain:
             try:
-                pos_z_fp = results.variables['Casier'].index('Z')
+                pos_z_fp = resultats.variables['Casier'].index('Z')
             except ValueError:
                 raise TatooineException("La variable Z doit être présente dans les résultats aux casiers")
         else:
             pos_z_fp = None
 
-        pos_variables = [results.variables['Section'].index(var) for var in varnames_1d]
-        pos_sections_list = [results.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
+        pos_variables = [resultats.variables['Section'].index(var) for var in varnames_1d]
+        pos_sections_list = [resultats.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
         if global_mesh_constr.has_floodplain:
-            pos_casiers_list = [results.emh['Casier'].index(casier.id)
+            pos_casiers_list = [resultats.emh['Casier'].index(casier.id)
                                 for casier in modele.get_liste_casiers() if casier.is_active]
         else:
             pos_casiers_list = []
@@ -224,10 +224,10 @@ def mesh_crue10_run(args):
             resout.write_header(output_header)
 
             if args.calc_unsteady is None:
-                for i, calc_name in enumerate(results.calc_steady_dict.keys()):
+                for i, calc_name in enumerate(resultats.res_calc_pseudoperm.keys()):
                     logger.info("~> Calcul permanent %s" % calc_name)
                     # Read a single *steady* calculation
-                    res_steady = results.get_res_steady(calc_name)
+                    res_steady = resultats.get_data_pseudoperm(calc_name)
                     variables_at_profiles = res_steady['Section'][pos_sections_list, :][:, pos_variables]
                     if global_mesh_constr.has_floodplain:
                         z_at_casiers = res_steady['Casier'][pos_casiers_list, pos_z_fp]
@@ -251,9 +251,9 @@ def mesh_crue10_run(args):
                     resout.write_entire_frame(output_header, 3600.0 * i, values)
 
             else:
-                calc_unsteady = results.get_calc_unsteady(args.calc_unsteady)
+                calc_unsteady = resultats.get_res_calc_trans(args.calc_unsteady)
                 logger.info("Calcul transitoire %s" % args.calc_unsteady)
-                res_unsteady = results.get_res_unsteady(args.calc_unsteady)
+                res_unsteady = resultats.get_data_trans(args.calc_unsteady)
 
                 for i, (time, _) in enumerate(calc_unsteady.frame_list):
                     logger.info("~> %fs" % time)
