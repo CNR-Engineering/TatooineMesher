@@ -106,7 +106,7 @@ class Coord:
         Compute dimensionless from starting to ending point distance projetée adimensionnée sur droite début->fin
         """
         trace = LineString([self.array[['X', 'Y']][0], self.array[['X', 'Y']][-1]])
-        Xp = np.empty(len(self.array), dtype=np.float)
+        Xp = np.empty(len(self.array), dtype=float)
 
         for i, row in enumerate(self.array):
             point = Point(list(row)[:2])
