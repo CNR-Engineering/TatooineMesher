@@ -19,6 +19,7 @@ Les variables écrites dans le fichier de sortie sont :
 
 Seulement les branches et les casiers actifs sont traités.
 """
+
 import numpy as np
 from numpy.lib.recfunctions import unstructured_to_structured
 import os.path
@@ -41,7 +42,7 @@ from tatooinemesher.utils.arg_command_line import MyArgParse
 from tatooinemesher.utils import logger, resample_2d_line, set_logger_level, TatooineException
 
 
-VARIABLES_FROM_GEOMETRY = ['B', 'IS LIT ACTIVE', 'W']
+VARIABLES_FROM_GEOMETRY = ["B", "IS LIT ACTIVE", "W"]
 
 
 def mesh_crue10_run(args):
@@ -85,15 +86,14 @@ def mesh_crue10_run(args):
                 for crue_section in branche.liste_sections_dans_branche:
                     if isinstance(crue_section, SectionProfil):
                         coords = list(crue_section.get_coord(add_z=True))
-                        section = CrossSection(crue_section.id, [(coord[0], coord[1]) for coord in coords], 'Section')
+                        section = CrossSection(crue_section.id, [(coord[0], coord[1]) for coord in coords], "Section")
 
                         # Determine some variables (constant over the simulation) from the geometry
                         z = np.array([coord[2] for coord in coords])
                         is_bed_active = crue_section.get_is_bed_active_array()
                         mean_strickler = crue_section.get_friction_coeff_array()
                         section.coord.values = np.core.records.fromarrays(
-                            np.column_stack((z, is_bed_active, mean_strickler)).T,
-                            names=VARIABLES_FROM_GEOMETRY
+                            np.column_stack((z, is_bed_active, mean_strickler)).T, names=VARIABLES_FROM_GEOMETRY
                         )
 
                         section_seq.add_section(section)
@@ -106,8 +106,12 @@ def mesh_crue10_run(args):
                         section_seq, args.interp_constraint_lines
                     )
 
-                    mesh_constr = MeshConstructor(section_seq=section_seq, lat_step=args.lat_step,
-                                                  nb_pts_lat=args.nb_pts_lat, interp_values=args.interp_values)
+                    mesh_constr = MeshConstructor(
+                        section_seq=section_seq,
+                        lat_step=args.lat_step,
+                        nb_pts_lat=args.nb_pts_lat,
+                        interp_values=args.interp_values,
+                    )
                     mesh_constr.build_interp(constraint_lines, args.long_step, args.constant_long_disc)
                     mesh_constr.build_mesh(in_floworiented_crs=True)
 
@@ -127,6 +131,7 @@ def mesh_crue10_run(args):
         if not os.path.exists(args.infile_dem):
             raise TatooineException("File not found: %s" % args.infile_dem)
         from gdal import Open
+
         raster = Open(args.infile_dem)
         dem_interp = interp_raster(raster)
 
@@ -144,23 +149,25 @@ def mesh_crue10_run(args):
                 coords = resample_2d_line(line.coords, floodplain_step)[1:]  # Ignore last duplicated node
 
                 hard_nodes_xy = np.array(coords, dtype=float)
-                hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=np.int)
+                hard_nodes_idx = np.arange(0, len(hard_nodes_xy), dtype=int)
                 hard_segments = np.column_stack((hard_nodes_idx, np.roll(hard_nodes_idx, 1)))
 
                 tri = {
-                    'vertices': np.array(np.column_stack((hard_nodes_xy[:, 0], hard_nodes_xy[:, 1]))),
-                    'segments': hard_segments,
+                    "vertices": np.array(np.column_stack((hard_nodes_xy[:, 0], hard_nodes_xy[:, 1]))),
+                    "segments": hard_segments,
                 }
-                triangulation = triangle.triangulate(tri, opts='qpa%f' % max_elem_area)
+                triangulation = triangle.triangulate(tri, opts="qpa%f" % max_elem_area)
 
-                nodes_xy = np.array(triangulation['vertices'], dtype=float)
+                nodes_xy = np.array(triangulation["vertices"], dtype=float)
                 bottom = dem_interp(nodes_xy)
-                points = unstructured_to_structured(np.column_stack((nodes_xy, bottom)), names=['X', 'Y', 'Z'])
+                points = unstructured_to_structured(np.column_stack((nodes_xy, bottom)), names=["X", "Y", "Z"])
 
                 global_mesh_constr.add_floodplain_mesh(triangulation, points)
 
     if len(global_mesh_constr.points) == 0:
-        raise ExceptionCrue10("Aucun point à traiter, adaptez l'option `--branch_patterns` et/ou `--branch_types_filter`")
+        raise ExceptionCrue10(
+            "Aucun point à traiter, adaptez l'option `--branch_patterns` et/ou `--branch_types_filter`"
+        )
 
     logger.info(global_mesh_constr.summary())  # General information about the merged mesh
 
@@ -170,57 +177,62 @@ def mesh_crue10_run(args):
         logger.info(resultats.summary())
 
         # Check result consistency
-        missing_sections = modele.get_missing_active_sections(resultats.emh['Section'])
+        missing_sections = modele.get_missing_active_sections(resultats.emh["Section"])
         if missing_sections:
-            raise ExceptionCrue10("Sections actives dans le scénario mais manquantes dans le Run :\n%s"
-                                  % missing_sections)
+            raise ExceptionCrue10(
+                "Sections actives dans le scénario mais manquantes dans le Run :\n%s" % missing_sections
+            )
 
         # Subset results to get requested variables at active sections
-        varnames_1d = resultats.variables['Section']
+        varnames_1d = resultats.variables["Section"]
         logger.info("Variables 1D disponibles aux sections: %s" % varnames_1d)
         try:
-            pos_z = varnames_1d.index('Z')
+            pos_z = varnames_1d.index("Z")
         except ValueError:
             raise TatooineException("La variable Z doit être présente dans les résultats aux sections")
         if global_mesh_constr.has_floodplain:
             try:
-                pos_z_fp = resultats.variables['Casier'].index('Z')
+                pos_z_fp = resultats.variables["Casier"].index("Z")
             except ValueError:
                 raise TatooineException("La variable Z doit être présente dans les résultats aux casiers")
         else:
             pos_z_fp = None
 
-        pos_variables = [resultats.variables['Section'].index(var) for var in varnames_1d]
-        pos_sections_list = [resultats.emh['Section'].index(profil.id) for profil in global_mesh_constr.section_seq]
+        pos_variables = [resultats.variables["Section"].index(var) for var in varnames_1d]
+        pos_sections_list = [resultats.emh["Section"].index(profil.id) for profil in global_mesh_constr.section_seq]
         if global_mesh_constr.has_floodplain:
-            pos_casiers_list = [resultats.emh['Casier'].index(casier.id)
-                                for casier in modele.get_liste_casiers() if casier.is_active]
+            pos_casiers_list = [
+                resultats.emh["Casier"].index(casier.id) for casier in modele.get_liste_casiers() if casier.is_active
+            ]
         else:
             pos_casiers_list = []
 
-        if 'H' in varnames_1d:
-            raise TatooineException("La variable H (charge) de Crue10 entre en conflit avec celle de TatooineMesher. "
-                                    "Veuillez supprimer cette variable et relancer le traitement")
-        additional_variables_id = ['H']
-        if 'Vact' in varnames_1d:
-            additional_variables_id.append('M')
+        if "H" in varnames_1d:
+            raise TatooineException(
+                "La variable H (charge) de Crue10 entre en conflit avec celle de TatooineMesher. "
+                "Veuillez supprimer cette variable et relancer le traitement"
+            )
+        additional_variables_id = ["H"]
+        if "Vact" in varnames_1d:
+            additional_variables_id.append("M")
 
         values_geom = global_mesh_constr.interp_values_from_geom()
         z_bottom = values_geom[0, :]
         with Serafin.Write(args.outfile_mesh, args.lang, overwrite=True) as resout:
-            title = '%s (written by TatooineMesher)' % os.path.basename(args.outfile_mesh)
+            title = "%s (written by TatooineMesher)" % os.path.basename(args.outfile_mesh)
             output_header = Serafin.SerafinHeader(title=title, lang=args.lang)
-            output_header.from_triangulation(global_mesh_constr.triangle['vertices'],
-                                             global_mesh_constr.triangle['triangles'] + 1)
+            output_header.from_triangulation(
+                global_mesh_constr.triangle["vertices"], global_mesh_constr.triangle["triangles"] + 1
+            )
             for var_name in VARIABLES_FROM_GEOMETRY:
-                if var_name in ['B', 'W']:
+                if var_name in ["B", "W"]:
                     output_header.add_variable_from_ID(var_name)
                 else:
-                    output_header.add_variable_str(var_name, var_name, '')
+                    output_header.add_variable_str(var_name, var_name, "")
             for var_id in additional_variables_id:
                 output_header.add_variable_from_ID(var_id)
             for var_name in varnames_1d:
-                output_header.add_variable_str(var_name, var_name, '')
+                output_header.add_variable_str(var_name, var_name, "")
             resout.write_header(output_header)
 
             if args.calc_unsteady is None:
@@ -228,9 +240,9 @@ def mesh_crue10_run(args):
                     logger.info("~> Calcul permanent %s" % calc_name)
                     # Read a single *steady* calculation
                     res_steady = resultats.get_data_pseudoperm(calc_name)
-                    variables_at_profiles = res_steady['Section'][pos_sections_list, :][:, pos_variables]
+                    variables_at_profiles = res_steady["Section"][pos_sections_list, :][:, pos_variables]
                     if global_mesh_constr.has_floodplain:
-                        z_at_casiers = res_steady['Casier'][pos_casiers_list, pos_z_fp]
+                        z_at_casiers = res_steady["Casier"][pos_casiers_list, pos_z_fp]
                     else:
                         z_at_casiers = None
 
@@ -241,9 +253,9 @@ def mesh_crue10_run(args):
                     depth = np.clip(values_res[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
 
                     # Merge and write values
-                    if 'Vact' in varnames_1d:
+                    if "Vact" in varnames_1d:
                         # Compute velocity magnitude from Vact and apply mask "is active bed"
-                        velocity = values_res[varnames_1d.index('Vact'), :] * values_geom[1, :]
+                        velocity = values_res[varnames_1d.index("Vact"), :] * values_geom[1, :]
                         values = np.vstack((values_geom, depth, velocity, values_res))
                     else:
                         values = np.vstack((values_geom, depth, values_res))
@@ -257,10 +269,10 @@ def mesh_crue10_run(args):
 
                 for i, (time, _) in enumerate(calc_unsteady.frame_list):
                     logger.info("~> %fs" % time)
-                    res_at_sections = res_unsteady['Section'][i, :, :]
+                    res_at_sections = res_unsteady["Section"][i, :, :]
                     variables_at_profiles = res_at_sections[pos_sections_list, :][:, pos_variables]
                     if global_mesh_constr.has_floodplain:
-                        z_at_casiers = res_unsteady['Casier'][i, pos_casiers_list, pos_z_fp]
+                        z_at_casiers = res_unsteady["Casier"][i, pos_casiers_list, pos_z_fp]
                     else:
                         z_at_casiers = None
 
@@ -271,9 +283,9 @@ def mesh_crue10_run(args):
                     depth = np.clip(values_res[pos_z, :] - z_bottom, a_min=0.0, a_max=None)
 
                     # Merge and write values
-                    if 'Vact' in varnames_1d:
+                    if "Vact" in varnames_1d:
                         # Compute velocity magnitude from Vact and apply mask "is active bed"
-                        velocity = values_res[varnames_1d.index('Vact'), :] * values_geom[1, :]
+                        velocity = values_res[varnames_1d.index("Vact"), :] * values_geom[1, :]
                         values = np.vstack((values_geom, depth, velocity, values_res))
                     else:
                         values = np.vstack((values_geom, depth, values_res))
@@ -295,24 +307,35 @@ parser.infile_args.title = "~> Crue10 input model and run (and the optional DEM)
 parser.infile_args.add_argument("infile_etu", help="Crue10 study file (*.etu.xml)")
 parser.infile_args.add_argument("model_name", help="model name")
 parser.infile_args.add_argument("--infile_rcal", help="Crue10 results file (*.rcal.xml)")
-parser.infile_args.add_argument("--calc_unsteady", help="name of the unsteady file "
-                                                        "(otherwise considers all steady calculations)")
-parser.infile_args.add_argument("--infile_dem", help='Raster file (geoTIFF format) containing bottom elevation for '
-                                                     'the "casiers" in the floodplain (*.tif)')
+parser.infile_args.add_argument(
+    "--calc_unsteady", help="name of the unsteady file " "(otherwise considers all steady calculations)"
+)
+parser.infile_args.add_argument(
+    "--infile_dem",
+    help="Raster file (geoTIFF format) containing bottom elevation for " 'the "casiers" in the floodplain (*.tif)',
+)
 # Parameters to select branches
 parser_branches = parser.add_argument_group("Parameters to filter branches")
-parser_branches.add_argument("--branch_types_filter", type=int, nargs='+', default=Branche.TYPES_IN_MINOR_BED,
-                             help="types of branches to consider")
-parser_branches.add_argument("--branch_patterns", nargs='+', default=None,
-                             help="list of patterns to filter branches which name does not contain any pattern")
+parser_branches.add_argument(
+    "--branch_types_filter",
+    type=int,
+    nargs="+",
+    default=Branche.TYPES_IN_MINOR_BED,
+    help="types of branches to consider",
+)
+parser_branches.add_argument(
+    "--branch_patterns",
+    nargs="+",
+    default=None,
+    help="list of patterns to filter branches which name does not contain any pattern",
+)
 # Mesh parameters
-parser.mesher_args.add_argument("--floodplain_step", type=float, default=None,
-                                help="floodplain space step (in m)")
+parser.mesher_args.add_argument("--floodplain_step", type=float, default=None, help="floodplain space step (in m)")
 # Outputs
 parser.add_out_mesh_file()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = parser.parse_args()
     try:
         mesh_crue10_run(args)
