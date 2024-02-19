@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 from tatooinemesher import VERSION
 
 
-EXCLUDE_FROM_PACKAGES = ["cli", "tests"]
+EXCLUDE_FROM_PACKAGES = ["cli", "media"]
 
 
 with open("requirements.txt") as f:
@@ -25,6 +25,6 @@ setup(
     packages=find_packages(exclude=EXCLUDE_FROM_PACKAGES),
     scripts=cli_files,
     install_requires=requirements,
-    description="Python library for Telemac post-processing tasks",
+    description="Channel mesher and interpolator from 1D cross-sections and constraint lines",
     url="https://github.com/CNR-Engineering/TatooineMesher",
 )
