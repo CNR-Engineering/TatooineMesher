@@ -28,7 +28,7 @@ def get_intersections(linestrings):
 
 
 def float_vars(varname_list):
-    return [(label, np.float) for label in varname_list]
+    return [(label, float) for label in varname_list]
 
 
 def strictly_increasing(array):
