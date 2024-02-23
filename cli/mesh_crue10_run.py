@@ -130,7 +130,7 @@ def mesh_crue10_run(args):
 
         if not os.path.exists(args.infile_dem):
             raise TatooineException("File not found: %s" % args.infile_dem)
-        from gdal import Open
+        from osgeo.gdal import Open
 
         raster = Open(args.infile_dem)
         dem_interp = interp_raster(raster)
