@@ -23,6 +23,7 @@ setup(
     author="Luc Duron",
     author_email="l.duron@cnr.tm.fr",
     packages=find_packages(exclude=EXCLUDE_FROM_PACKAGES),
+    include_package_data=True,  # see data files in `MANIFEST.in`
     scripts=cli_files,
     install_requires=requirements,
     description="Channel mesher and interpolator from 1D cross-sections and constraint lines",
