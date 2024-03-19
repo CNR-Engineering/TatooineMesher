@@ -6,6 +6,7 @@ venv/
 .\#*
 Thumbs.db
 .idea
+.vscode
 
 *.aux
 *.bbl

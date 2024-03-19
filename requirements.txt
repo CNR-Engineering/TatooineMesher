@@ -1,4 +1,3 @@
-gdal  # only for mesh_crue10_run.py with casiers
 jinja2
 matplotlib
 numpy
