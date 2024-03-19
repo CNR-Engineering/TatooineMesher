@@ -26,6 +26,9 @@ setup(
     include_package_data=True,  # see data files in `MANIFEST.in`
     scripts=cli_files,
     install_requires=requirements,
+    extras_require={
+        "CASIER": ["gdal"],
+    },
     description="Channel mesher and interpolator from 1D cross-sections and constraint lines",
     url="https://github.com/CNR-Engineering/TatooineMesher",
 )
