@@ -3,7 +3,7 @@ TatooineMesher
 
 ![Python package](https://github.com/CNR-Engineering/TatooineMesher/workflows/Python%20package/badge.svg)
 
-Tested versions: 3.9, 3.10, 3.11, 3.12 and 3.13.
+Tested versions: 3.10, 3.11, 3.12 and 3.13.
 
 <img style="float: right" src="https://github.com/CNR-Engineering/TatooineMesher/raw/master/media/logo_tatooinemesher_256px.png" width="168px" />
 
