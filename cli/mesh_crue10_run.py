@@ -27,6 +27,13 @@ from pyteltools.slf import Serafin
 import sys
 from time import perf_counter
 import triangle
+try:
+    from osgeo.gdal import Open
+
+    GDAL_AVAILABLE = True
+except ModuleNotFoundError:
+    GDAL_AVAILABLE = False
+
 
 from crue10.emh.branche import Branche
 from crue10.emh.section import SectionProfil
@@ -130,7 +137,6 @@ def mesh_crue10_run(args):
 
         if not os.path.exists(args.infile_dem):
             raise TatooineException("File not found: %s" % args.infile_dem)
-        from osgeo.gdal import Open
 
         raster = Open(args.infile_dem)
         dem_interp = interp_raster(raster)
@@ -337,6 +343,11 @@ parser.add_out_mesh_file()
 
 if __name__ == "__main__":
     args = parser.parse_args()
+
+    if args.infile_dem and not GDAL_AVAILABLE:
+        logger.critical("GDAL is not installed. Install it if you want to use Crue10 with casier.")
+        sys.exit(1)
+
     try:
         mesh_crue10_run(args)
     except FileNotFoundError as e:
